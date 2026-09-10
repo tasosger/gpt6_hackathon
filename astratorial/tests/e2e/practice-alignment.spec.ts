@@ -45,17 +45,18 @@ test("fits a fixed camera, renders animated GLB ghost hands, and keeps completio
   });
   await page.goto(`/tutorial/${id}/espresso/practice`);
   await page.getByRole("button",{name:"Open my camera"}).click();
-  await expect(page.locator(".camera-status")).toContainText("ALIGN YOUR WORKSPACE");
+  await expect(page.locator(".camera-status")).toContainText("ALIGNMENT 1 OF 8");
   const camera=new PerspectiveCamera(52,1280/720,.01,100);camera.position.set(1.8,2.1,3.4);camera.lookAt(0,1.1,0);camera.updateMatrixWorld();
   const surface=page.locator(".camera-click-layer");
   for(const position of landmarks){const point=new Vector3(...position).project(camera);const box=(await surface.boundingBox())!;await surface.click({position:{x:(point.x+1)*box.width/2,y:(1-point.y)*box.height/2}});}
   await expect(page.locator(".camera-status")).toContainText("WORKSPACE ALIGNED");
+  await page.getByText("Guidance settings", {exact:true}).click();
   await page.getByRole("checkbox",{name:"Check progress automatically"}).uncheck();
   await expect(page.locator(".ghost-layer canvas")).toBeVisible();
   await page.getByRole("button",{name:"Pause guidance"}).click();
   await expect(page.getByRole("button",{name:"I’ve done this",exact:true})).toBeDisabled();
   await page.getByRole("button",{name:"Resume guidance"}).click();
-  await page.getByRole("button",{name:"Repeat this gesture"}).click();
+  await page.getByRole("button",{name:"Show this step again"}).click();
   await expect(page.getByRole("button",{name:"I’ve done this",exact:true})).toBeEnabled();
   expect(session.currentStepIndex).toBe(0);
   await page.getByRole("button",{name:"Turn off camera"}).click();

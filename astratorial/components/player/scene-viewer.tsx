@@ -62,7 +62,7 @@ function RecordedScene({ manifest, time, ghost, opacity, objectAnchors, detailed
         node.userData.ghostOffset = { value: new Vector3() };
         const materials = Array.isArray(node.material) ? node.material : [node.material];
         for (const material of materials) if (material instanceof MeshStandardMaterial) {
-          material.color = new Color("#ffcbb5"); material.emissive = new Color("#c26e47"); material.emissiveIntensity = .35; material.transparent = true; material.opacity = opacity; material.depthWrite = false;
+          material.color = new Color("#99f6e4"); material.emissive = new Color("#0f766e"); material.emissiveIntensity = .35; material.transparent = true; material.opacity = opacity; material.depthWrite = false;
           material.onBeforeCompile = shader => {
             shader.uniforms.ghostOffset = node.userData.ghostOffset;
             shader.vertexShader = "uniform vec3 ghostOffset;\n" + shader.vertexShader.replace("#include <project_vertex>", "#include <project_vertex>\nmvPosition.xyz += (viewMatrix * vec4(ghostOffset, 0.0)).xyz;\ngl_Position = projectionMatrix * mvPosition;");
@@ -134,9 +134,9 @@ function CapsuleBetween({ from, to, radius, color, ghost = false }: { from: Vec3
 
 function Hand({ position, ghost }: { position: Vec3; ghost: boolean }) {
   return <group position={position} rotation={[0, .3, -.15]}>
-    <RoundedBox args={[.078, .028, .082]} radius={.013} smoothness={3} castShadow><meshStandardMaterial color={ghost ? "#ffd0b5" : "#bf8b6b"} transparent={ghost} opacity={ghost ? .65 : 1} roughness={.72} /></RoundedBox>
-    {[0, 1, 2, 3].map(i => <group key={i} position={[(i - 1.5) * .019, 0, -.057]} rotation={[-.15 - i * .05, 0, 0]}><CapsuleBetween from={[0, 0, 0]} to={[0, -.007, -.065 + Math.abs(i - 1) * .01]} radius={.008} color={ghost ? "#ffd0b5" : "#bf8b6b"} ghost={ghost} /></group>)}
-    <CapsuleBetween from={[-.034, 0, .013]} to={[-.061, -.014, -.023]} radius={.009} color={ghost ? "#ffd0b5" : "#bf8b6b"} ghost={ghost} />
+    <RoundedBox args={[.078, .028, .082]} radius={.013} smoothness={3} castShadow><meshStandardMaterial color={ghost ? "#99f6e4" : "#bf8b6b"} transparent={ghost} opacity={ghost ? .65 : 1} roughness={.72} /></RoundedBox>
+    {[0, 1, 2, 3].map(i => <group key={i} position={[(i - 1.5) * .019, 0, -.057]} rotation={[-.15 - i * .05, 0, 0]}><CapsuleBetween from={[0, 0, 0]} to={[0, -.007, -.065 + Math.abs(i - 1) * .01]} radius={.008} color={ghost ? "#99f6e4" : "#bf8b6b"} ghost={ghost} /></group>)}
+    <CapsuleBetween from={[-.034, 0, .013]} to={[-.061, -.014, -.023]} radius={.009} color={ghost ? "#99f6e4" : "#bf8b6b"} ghost={ghost} />
   </group>;
 }
 
@@ -182,7 +182,7 @@ function DemoScene({ category, time, step, ghost, mode }: { category: Tutorial["
       {Array.from({ length: 9 }, (_, i) => <mesh key={i} position={[-.95 + Math.sin(i * 3) * .08, 1.22 + i * .017, -.3 + Math.cos(i * 2) * .08]} rotation={[.4, i, .5]}><sphereGeometry args={[.065, 12, 8]} /><meshStandardMaterial color={i % 2 ? "#778868" : "#5c7353"} /></mesh>)}
       {mode !== "first" && <group position={[.62, 0, 1.02]}><CapsuleBetween from={[0, .87, 0]} to={[0, 1.36, 0]} radius={.16} color="#657561" /><CapsuleBetween from={[-.085, .16, 0]} to={[-.085, .88, 0]} radius={.07} color="#d0c4ad" /><CapsuleBetween from={[.085, .16, 0]} to={[.085, .88, 0]} radius={.07} color="#d0c4ad" /><mesh position={[0, 1.56, 0]} scale={[.82, 1, .87]} castShadow><sphereGeometry args={[.105, 28, 24]} /><meshStandardMaterial color="#bf8b6b" roughness={.85} /></mesh><mesh position={[0, 1.62, .012]} scale={[.85, .5, .86]}><sphereGeometry args={[.111, 24, 16]} /><meshStandardMaterial color="#504134" /></mesh></group>}
     </>}
-    <group ref={hand}><CapsuleBetween from={[.52, 1.34, 1.02]} to={[.36, 1.23, .67]} radius={.038} color={ghost ? "#ffcfb4" : "#657561"} ghost={ghost} /><CapsuleBetween from={[.36, 1.23, .67]} to={wrist} radius={.023} color={ghost ? "#ffcfb4" : "#bf8b6b"} ghost={ghost} /><Hand position={wrist} ghost={ghost} /></group>
+    <group ref={hand}><CapsuleBetween from={[.52, 1.34, 1.02]} to={[.36, 1.23, .67]} radius={.038} color={ghost ? "#99f6e4" : "#657561"} ghost={ghost} /><CapsuleBetween from={[.36, 1.23, .67]} to={wrist} radius={.023} color={ghost ? "#99f6e4" : "#bf8b6b"} ghost={ghost} /><Hand position={wrist} ghost={ghost} /></group>
     {!ghost && <ContactShadows position={[0, .001, 0]} opacity={.32} scale={8} blur={2.5} far={4} resolution={256} />}
   </group>;
 }
@@ -202,7 +202,7 @@ export default function SceneViewer({ tutorial, time, mode, ghost = false, calib
     <directionalLight position={[3, 3, -1]} intensity={1.2} color="#e2e8ff" />
     <Suspense fallback={<Html center><span className="scene-loading">Preparing your scene…</span></Html>}>
       {hasAsset && scene ? <RecordedScene manifest={scene} time={time} ghost={ghost} opacity={opacity} objectAnchors={objectAnchors} detailed={detailed} onReady={onReady} /> : <DemoScene category={tutorial.category} time={time} step={Math.max(0, currentStep)} ghost={ghost} mode={mode} />}
-      {!ghost && landmarkIndex !== undefined && scene?.landmarks[landmarkIndex] && <mesh position={scene.landmarks[landmarkIndex].position}><sphereGeometry args={[.022, 20, 16]} /><meshBasicMaterial color="#ed764c" depthTest={false} /></mesh>}
+      {!ghost && landmarkIndex !== undefined && scene?.landmarks[landmarkIndex] && <mesh position={scene.landmarks[landmarkIndex].position}><sphereGeometry args={[.022, 20, 16]} /><meshBasicMaterial color="#14b8a6" depthTest={false} /></mesh>}
     </Suspense>
     <CameraRig mode={mode} manifest={scene} calibration={calibration} />
   </Canvas></SceneBoundary>;

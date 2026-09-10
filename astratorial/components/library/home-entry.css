@@ -1,0 +1,11 @@
+.home-help-form { background: var(--paper, #fff); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin-top: 23px; box-shadow: 0 8px 28px rgb(17 60 66 / 5%); }
+.home-help-form > label { display: block; font-size: 12px; font-weight: 650; color: var(--ink); margin-bottom: 8px; }
+.home-help-form textarea { width: 100%; min-height: 70px; border: 0; background: transparent; resize: vertical; color: var(--ink); font: inherit; font-size: 14px; line-height: 1.6; padding: 3px; }
+.home-help-form textarea:focus-visible { outline: 2px solid var(--accent, #147d83); outline-offset: 4px; border-radius: 4px; }
+.home-help-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.home-help-footer > span { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.home-help-footer .button { white-space: nowrap; padding: 11px 15px; }
+.home-help-examples { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; font-size: 11px; color: var(--muted); }
+.home-help-examples button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 30px; background: transparent; padding: 7px 10px; color: var(--ink); cursor: pointer; font: inherit; }
+.home-help-examples button:hover { background: var(--paper, #fff); }
+@media (max-width: 400px) { .home-help-footer { align-items: flex-start; flex-direction: column; } .home-help-footer .button { width: 100%; } }

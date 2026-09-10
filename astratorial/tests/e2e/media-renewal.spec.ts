@@ -48,6 +48,7 @@ test("renews media after four minutes without downloading the loaded scene or lo
     return route.fulfill({ status: range ? 206 : 200, body: audio.subarray(start, end + 1), contentType: "audio/wav", headers: { "Accept-Ranges": "bytes", ...(range ? { "Content-Range": `bytes ${start}-${end}/${audio.length}` } : {}) } });
   });
   await page.goto(`/tutorial/${id}/your-everyday-espresso`);
+  await page.getByText("View options", {exact:true}).click();
   await expect(page.getByRole("button", { name: "More detail", exact: true })).toBeEnabled();
   await expect.poll(() => sceneDownloads).toBe(1);
   await expect(page.locator("audio")).toHaveJSProperty("duration", 12);

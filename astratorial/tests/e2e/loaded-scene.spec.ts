@@ -20,10 +20,11 @@ test("loads an animated GLB, keeps camera controls live, and reviews publication
   await page.route(`**/api/tutorials/${id}/publish`, route=>route.fulfill({json:{preview:{...tutorial,goal:"Public goal for review",scene:{...tutorial.scene,sanitized:true,assets:[{kind:"sanitized_scene",path:"test/public.glb",url:"/fixture-scene.glb"}]}},requiresConfirmation:true}}));
   await page.route("**/fixture-*.glb", route=>route.fulfill({path:path.join(process.cwd(),"tests/fixtures/animated-scene.glb"),contentType:"model/gltf-binary"}));
   await page.goto(`/tutorial/${id}/your-everyday-espresso`);
+  await page.getByText("View options", {exact:true}).click();
   await expect(page.getByRole("button",{name:"More detail",exact:true})).toBeEnabled();
   await page.getByRole("button",{name:"More detail",exact:true}).click();
-  await expect(page.getByRole("button",{name:"Use mobile detail",exact:true})).toBeVisible();
-  await page.getByRole("button",{name:"First person",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Use standard detail",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Close-up",exact:true}).click();
   await page.getByRole("button",{name:"Play tutorial",exact:true}).click();
   await expect(page.getByRole("slider",{name:"Tutorial timeline"})).not.toHaveValue("0");
   await page.getByRole("button",{name:"Share",exact:true}).click();
