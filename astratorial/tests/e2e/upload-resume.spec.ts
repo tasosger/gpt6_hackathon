@@ -16,16 +16,16 @@ test("resumes an interrupted capture after reload with the same ticket and a ren
   let renewals = 0;
   let interrupted = false;
   let completed = false;
-  let analysisStarted = false;
+  let generationStarted = false;
   let resumedOffset: string | undefined;
   let resumedToken: string | undefined;
   let resumedBytes = 0;
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   const configuration = () => ({ uploadId, asset, endpoint, headers: { "x-signature": renewals ? "renewed-token" : "initial-token" }, metadata: { bucketName: "captures", objectName: asset.path, contentType: asset.mimeType }, chunkSize: savedOffset });
-  const job = { id: "upload-resume-job", kind: "analyze", status: "queued", progress: 0, message: "Fixture analysis queued" };
+  const job = { id: "upload-resume-job", kind: "generate", stage: "ingest", status: "queued", progress: 0, message: "Fixture generation queued" };
 
-  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, services: { database: true, openai: true, worker: true }, user: { id: "fixture-owner", email: "test@example.com" } } }));
+  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, generationMode: "illustrated", services: { database: true, openai: true, worker: true }, user: { id: "fixture-owner", email: "test@example.com" } } }));
   await page.route(`**/api/tutorials/${id}`, route => route.fulfill({ json: { tutorial: completed ? { ...tutorial, assets: [asset] } : tutorial } }));
   await page.route("**/api/uploads?*", route => route.fulfill({ json: { uploads: ticket ? [ticket] : [] } }));
   await page.route("**/api/uploads", route => {
@@ -37,7 +37,7 @@ test("resumes an interrupted capture after reload with the same ticket and a ren
   });
   await page.route(`**/api/uploads/${uploadId}/renew`, route => { renewals++; return route.fulfill({ json: configuration() }); });
   await page.route("**/api/uploads/complete", route => { completed = true; return route.fulfill({ json: { tutorial: { ...tutorial, assets: [asset] }, asset } }); });
-  await page.route(`**/api/tutorials/${id}/analyze`, route => { analysisStarted = true; return route.fulfill({ json: { job } }); });
+  await page.route(`**/api/tutorials/${id}/generate`, route => { generationStarted = true; return route.fulfill({ json: { job } }); });
   await page.route("**/api/jobs/upload-resume-job", route => route.fulfill({ json: { job } }));
   await page.route("**/fixture-tus", route => route.fulfill({ status: 201, headers: { "Tus-Resumable": "1.0.0", "Upload-Offset": String(savedOffset), Location: resource } }));
   await page.route("**/fixture-tus/resource", route => {
@@ -56,13 +56,13 @@ test("resumes an interrupted capture after reload with the same ticket and a ren
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }, size);
   await page.goto(`/create?id=${id}`);
-  await expect(page.getByRole("button", { name: "Upload a video or photos", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Upload a video", exact: true })).toBeVisible();
   await reselect();
   await expect.poll(() => interrupted).toBe(true);
   await page.reload();
-  await expect(page.getByText("Continue an interrupted upload.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Continue your interrupted upload.", { exact: true })).toBeVisible();
   await reselect();
-  await expect.poll(() => analysisStarted).toBe(true);
+  await expect.poll(() => generationStarted).toBe(true);
   expect(completed).toBe(true);
   expect(creations).toBe(1);
   expect(renewals).toBe(1);

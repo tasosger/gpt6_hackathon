@@ -48,11 +48,11 @@ export const handleApi = api(async (request:Request) => {
     if(["analyze","generate","export"].includes(parts[2])&&method==="POST") {
       const user=await requireUser(); requireAI();requireWorker(); const tutorial=await ownedTutorial(id,user.id);
       if(!tutorial.assets.some(a=>a.kind==="video"||a.kind==="image"))fail(422,"Add a room video or photos before generating your tutorial.");
-      if(parts[2]==="generate") {
+      if(parts[2]==="generate"&&!localMode()) {
         if(!tutorial.plan)fail(422,"Analyze your capture and confirm the goal before generating.");
         if(tutorial.plan.questions.some(q=>q.required))fail(422,"Answer the required capture questions and analyze again first.","context_required");
         const triangulatable=(m:Tutorial["measurements"][number])=>new Set(m.observations.map(o=>`${o.assetId}:${o.timestamp}`)).size>=2;
-        if(!localMode() && (!tutorial.measurements.some(m=>m.purpose==="scale"&&triangulatable(m))||!tutorial.measurements.some(m=>m.purpose==="validation"&&triangulatable(m))))fail(422,"Add a scale measurement and an independent validation measurement, each marked in two different camera views.","measurements_required");
+        if(!tutorial.measurements.some(m=>m.purpose==="scale"&&triangulatable(m))||!tutorial.measurements.some(m=>m.purpose==="validation"&&triangulatable(m)))fail(422,"Add a scale measurement and an independent validation measurement, each marked in two different camera views.","measurements_required");
       }
       if(parts[2]==="export"&&!tutorial.scene)fail(409,"Generate the scene before exporting a video.");
       const {data,error}=await supabaseAdmin().rpc("enqueue_job",{p_tutorial_id:id,p_owner_id:user.id,p_kind:parts[2]});dbError(error);const job=GenerationJobSchema.parse(data);await wakeWorker(job.id);return json({job},202);

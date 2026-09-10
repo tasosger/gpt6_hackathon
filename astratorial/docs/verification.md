@@ -2,6 +2,19 @@
 
 Updated September 10, 2026. The hackathon pass added real Supabase provisioning and bounded OpenAI smoke tests using the user-authorized server-side key. No Modal GPU job or real room reconstruction was performed. The app now has an illustrated CPU generation mode in addition to the optional measured pipeline.
 
+## Single-video workflow update
+
+The illustrated workflow now accepts only one uploaded or recorded video and immediately queues a `generate` job. That job transcribes its audio, infers the spoken goal, creates a plan, and builds the narrated animation without a goal form, confirmation, or follow-up questions. The optional measured workflow is preserved separately.
+
+- Production build, TypeScript, and ESLint pass.
+- All 45 unit tests pass, including missing-plan generation, suppression of model/checkpoint questions, saved-plan recovery, animation retries, budgets, cancellation, and required scene objects.
+- All 24 desktop/mobile browser tests pass. Checks cover automatic upload-to-generation, reload without duplicate jobs, interrupted upload renewal, oversized files, and actual browser recording with synthetic video/audio tracks. Finishing the recording uploads exactly once and releases both tracks.
+- A pre-existing practice test synchronization race was corrected: synthetic phone rotation now waits for the next step to render, preserving the session-version assertion.
+- The initial connected acceptance attempt used a 6.68-second synthetic MP4 made from the existing cooking illustration and offline speech requesting pasta. The upload screen rendered, but guest authentication failed before a tutorial, upload, job, or paid model call. Supabase's settings endpoint confirmed `external.anonymous_users=false`; credential presence alone does not establish readiness.
+- Live acceptance remains blocked at that setting. The CLI has no existing management login, and dashboard interaction stopped when the browser was actively changed by the user. Enable **Allow anonymous sign-ins** and **Save changes** in [the project's authentication settings](https://supabase.com/dashboard/project/kvvbeiolpuyvexeliowi/auth/providers), then retry the single-video flow. No authentication or RLS setting was saved during this update. The local preview on port 4174 and illustrated worker are running; the queue was empty before the worker started.
+
+The earlier verification record below describes the previous workflow and its historical checks.
+
 | Check | Result | Scope |
 | --- | --- | --- |
 | Next.js production build | Passed | All application/API routes compile and generate successfully. |
@@ -26,7 +39,7 @@ The worker's fixture suite and its latest count are reported in [the pipeline gu
 
 Still required for the connected hackathon demo:
 
-- Copy the new project's anon and service-role keys into ignored `.env.local`, enable dashboard anonymous sign-ins, and verify the real browser upload → storage → queue → local generation path. Project creation and database setup are already complete; Chrome automation became stuck on an invisible menu while retrieving these settings.
+- The project's keys are now present in ignored `.env.local`. Enable and save dashboard anonymous sign-ins, then verify the real browser upload → storage → queue → local generation path. Project creation and database setup are complete; the single-video acceptance attempt above stops at disabled guest authentication.
 - Exercise real WebRTC voice with the local supervisor, including interruption, budget/expiry and cleanup.
 - Run actual espresso, cooking and assembly videos through the complete flow and check physical-phone usability. Sample images and emulation do not establish this result.
 

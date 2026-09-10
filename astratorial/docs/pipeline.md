@@ -1,5 +1,7 @@
 # Cloud pipeline and provisioning
 
+This page describes the optional measured cloud pipeline. The default hackathon flow uses the local illustrated worker: one video with a spoken goal starts a single `generate` job, which transcribes, plans, animates, and narrates without follow-up questions or confirmation. See the [hackathon flow](../README.md#hackathon-flow).
+
 The web application uses Supabase Auth, PostgreSQL/pgmq and two private Storage buckets. Modal runs the durable job consumer and GPU reconstruction. Blender, COLMAP, FFmpeg and PDF parsers never run inside a Next.js request. Astra supplies the reviewed plan, source-image object polygons, Blender instruction code, and visual review; it is not a video-to-3D model endpoint.
 
 ## What is implemented

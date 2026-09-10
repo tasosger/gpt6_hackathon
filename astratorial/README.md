@@ -2,15 +2,17 @@
 
 Personal tutorials built around your actual room, tools, and goal. Next.js 16 / React 19 / TypeScript, Three.js + React Three Fiber, Supabase, OpenAI, and isolated Modal reconstruction/render workers.
 
-The application includes guided capture, resumable uploads, video/audio recording, editable analysis and follow-up questions, marked scale measurements, durable generation, an interactive three-camera player, recorded narration, conversational WebRTC voice, calibrated camera practice, a private library, and task-area publication previews.
+The hackathon application turns one video into an animated tutorial, with resumable uploads, camera-and-microphone recording, durable generation, an interactive three-camera player, and recorded narration. It also includes conversational WebRTC voice, camera practice, a private library, and publication previews. The optional measured pipeline retains advanced capture and review tools.
 
 ## Hackathon flow
 
-1. Open **Upload a video**, then pick a short video or record one. No goal form or email sign-in comes first.
-2. Astra reads sampled frames and spoken instructions, suggests the goal, detects equipment, and asks only necessary follow-ups.
-3. Confirm or edit the suggested goal, then create the tutorial.
-4. Watch the animated scene from first-person, third-person or free camera; ask the instructor questions.
-5. Choose **Ready to try?**, open the phone camera, line up the illustrated hand guide, and work through each step.
+1. Open **Upload a video**, then pick or record one short video. Show your workspace and say what you want to do in the recording—for example, “I want to make pasta,” while showing the pasta, sauce, pan, sink, and stove.
+2. Uploading or finishing the recording starts generation automatically. Astra reads sampled frames and transcribed speech, identifies the goal and available supplies, plans the steps, and builds the animation in one saved job. There is no goal form, confirmation screen, follow-up question, or second create button.
+3. Watch the narrated animation from first-person, third-person, or free camera. Optional voice and camera practice are available afterward.
+
+The spoken goal takes priority over other plausible tasks in the scene. Astra uses visible or mentioned tools and ingredients, makes reasonable everyday assumptions, and omits optional extras. It never pauses the illustrated workflow to ask for more context. If processing fails, the same saved job can be retried within its existing allowance; reloading the page restores progress.
+
+The runtime uses the existing OpenAI Responses API with `gpt-6-astra`, a transcription model for the video's audio, and speech generation for narration. Astra produces validated scene data that the Three.js renderer animates. A Codex SDK agent is not needed for this flow.
 
 The default hackathon mode runs on an ordinary computer. Astra authors validated scene data, and Three.js turns it into an actual animated GLB with a generic instructor, objects and hand gestures. OpenAI generates recorded narration; the same scene is rendered for video export. This is an **illustrated tutorial informed by the video**, not a measured or photoreal replica. Manual guide alignment is a visual aid. The separate COLMAP/Blender/Modal measured pipeline remains available for further development.
 

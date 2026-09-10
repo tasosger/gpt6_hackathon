@@ -26,6 +26,7 @@ export function validateIllustration(plan:TutorialPlan, input:unknown):Illustrat
   const ids=new Set(plan.objects.map(o=>o.id));
   if(scene.objects.some(o=>!ids.has(o.id))||new Set(scene.objects.map(o=>o.id)).size!==scene.objects.length)throw new Error("The illustration contains an unknown or duplicate object.");
   const objectIds=new Set(scene.objects.map(o=>o.id));
+  if(plan.steps.some(step=>step.objectIds.some(id=>!objectIds.has(id))))throw new Error("The illustration must include every object referenced by a step, including the target of each interaction.");
   if(plan.steps.some(step=>!scene.gestures.some(g=>g.stepId===step.id)))throw new Error("Every step requires a gesture.");
   if(new Set(scene.gestures.map(g=>g.stepId)).size!==scene.gestures.length)throw new Error("Duplicate gesture step.");
   for(const gesture of scene.gestures) {

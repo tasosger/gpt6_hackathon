@@ -79,6 +79,8 @@ test("positions illustrated ghost hands without landmarks, checks a step, and re
   await page.getByRole("button", { name: "Resume guidance" }).click();
   await page.getByRole("button", { name: "I’ve done this", exact: true }).click();
   await expect.poll(() => session.currentStepIndex).toBe(1);
+  // Rotate after the browser has received the confirmed step and session version.
+  await expect(page.getByRole("heading", { name: tutorial.plan!.steps[1].title, exact: true })).toBeVisible();
   await page.evaluate(() => window.dispatchEvent(new Event("orientationchange")));
   await expect(page.getByRole("button", { name: "Guide is aligned", exact: true })).toBeVisible();
   await expect.poll(() => session.status).toBe("calibrating");

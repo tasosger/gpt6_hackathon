@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
-import type { CaptureAsset, Tutorial } from "../../lib/contracts";
+import type { CaptureAsset, GenerationJob, Tutorial } from "../../lib/contracts";
 import { getExample } from "../../lib/examples";
 
-test("a video starts analysis without a goal or login and returns an editable inferred plan", async ({ page, baseURL }) => {
+test("one video starts animation generation without login, a typed goal, or any follow-up", async ({ page, baseURL }) => {
   const id = "55555555-5555-4555-8555-555555555555";
   const uploadId = "66666666-6666-4666-8666-666666666666";
   const endpoint = new URL("/fixture-upload-first", baseURL).href;
@@ -10,10 +10,12 @@ test("a video starts analysis without a goal or login and returns an editable in
   const example = getExample("example-espresso")!;
   const blank: Tutorial = { ...example, id, title: "New tutorial", goal: "", constraints: [], referenceUrls: [], ownerId: "guest-owner", isExample: false, visibility: "private", status: "draft", plan: null, scene: null, job: null, assets: [], measurements: [] };
   const inferred: Tutorial = { ...blank, title: example.title, goal: "Make an espresso with the pod machine on my counter", assets: [asset], plan: { ...example.plan!, questions: [] } };
-  const analysis = { id: "infer-job", kind: "analyze", status: "queued", progress: 0, message: "Looking at the counter", budgetUsd: 25, spentUsd: 0 };
+  const generation = { id: "generate-job", kind: "generate", stage: "ingest", status: "queued", progress: 0, message: "Looking at the counter", budgetUsd: 25, spentUsd: 0 };
   let guest = false;
-  let analysisStarted = false;
-  let generated = false;
+  let generationRequests = 0;
+  let analysisRequests = 0;
+  let finished = false;
+  let polls = 0;
   let submittedGoal: unknown = null;
   const order: string[] = [];
   const errors: string[] = [];
@@ -25,29 +27,54 @@ test("a video starts analysis without a goal or login and returns an editable in
   await page.route("**/api/uploads", route => { order.push("upload"); return route.fulfill({ json: { uploadId, asset, endpoint, headers: {}, metadata: {}, chunkSize: 6_291_456 } }); });
   await page.route("**/fixture-upload-first", route => route.fulfill({ status: 201, headers: { "Tus-Resumable": "1.0.0", "Upload-Offset": String(asset.size), Location: `${endpoint}/file` } }));
   await page.route("**/api/uploads/complete", route => { order.push("complete"); return route.fulfill({ json: { tutorial: { ...blank, assets: [asset] }, asset } }); });
-  await page.route(`**/api/tutorials/${id}/analyze`, route => { analysisStarted = true; order.push("analyze"); return route.fulfill({ json: { job: analysis } }); });
-  await page.route("**/api/jobs/infer-job", route => route.fulfill({ json: { job: { ...analysis, status: "completed", progress: 100 }, tutorial: inferred } }));
-  await page.route(`**/api/tutorials/${id}/generate`, route => { generated = true; return route.fulfill({ json: { job: { ...analysis, id: "generate-job", kind: "generate", stage: "animate" } } }); });
-  await page.route("**/api/jobs/generate-job", route => route.fulfill({ json: { job: { ...analysis, id: "generate-job", kind: "generate", stage: "animate" } } }));
+  await page.route(`**/api/tutorials/${id}/analyze`, route => { analysisRequests++; return route.abort(); });
+  await page.route(`**/api/tutorials/${id}/generate`, route => { generationRequests++; order.push("generate"); return route.fulfill({ json: { job: generation } }); });
+  await page.route("**/api/jobs/generate-job", route => {
+    polls++;
+    return route.fulfill({ json: { job: { ...generation, status: finished ? "completed" : "running", stage: finished ? "ready" : "animate", progress: finished ? 100 : 50 }, tutorial: { ...inferred, status: finished ? "ready" : "generating", scene: finished ? example.scene : null } } });
+  });
 
   await page.goto("/create");
   await expect(page.getByRole("heading", { name: "Start with a video." })).toBeVisible();
   await expect(page.getByLabel("What would you like to try?", { exact: false })).not.toBeVisible();
   await expect(page.getByText("Set the scene’s scale", { exact: true })).not.toBeVisible();
   await page.locator('input[type="file"]').setInputFiles({ name: asset.name, mimeType: asset.mimeType, buffer: Buffer.alloc(asset.size) });
-  await expect.poll(() => analysisStarted).toBe(true);
-  expect(submittedGoal).toBe("");
-  expect(order).toEqual(["guest", "draft", "upload", "complete", "analyze"]);
-  await expect(page.getByLabel("Your goal", { exact: false })).toHaveValue(inferred.goal);
-  await expect(page.getByText("Things in your space", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Objects and distances are approximate/)).toBeVisible();
+  await expect.poll(() => generationRequests).toBe(1);
+  expect(submittedGoal).toBeUndefined();
+  expect(order).toEqual(["guest", "draft", "upload", "complete", "generate"]);
+  await expect(page.getByRole("heading", { name: "Your animation is taking shape." })).toBeVisible();
+  await expect.poll(() => polls).toBeGreaterThan(0);
+  await expect(page.getByLabel("Your goal", { exact: false })).not.toBeVisible();
+  await expect(page.locator("main textarea, main input:not([type=file])")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Create my tutorial|Update my plan|Add a little context/ })).toHaveCount(0);
+  await expect(page.getByText("Confirm", { exact: true })).not.toBeVisible();
   await expect(page.getByText("Set the scene’s scale", { exact: true })).not.toBeVisible();
-  await page.getByLabel("Your goal", { exact: false }).fill("Make a dairy-free coffee with this machine");
-  await expect(page.getByRole("button", { name: "Update my plan", exact: false })).toBeEnabled();
-  await page.getByLabel("Your goal", { exact: false }).fill(inferred.goal);
-  await page.getByRole("button", { name: "Create my tutorial", exact: false }).click();
-  await expect.poll(() => generated).toBe(true);
+  finished = true;
+  await expect(page.getByRole("link", { name: "Watch my tutorial" })).toHaveAttribute("href", `/tutorial/${id}/${inferred.slug}`);
+  expect(generationRequests).toBe(1);
+  expect(analysisRequests).toBe(0);
   expect(errors).toEqual([]);
+});
+
+test("reloading a running animation restores progress without enqueueing another job", async ({ page }) => {
+  const example = getExample("example-espresso")!;
+  const id = "77777777-7777-4777-8777-777777777777";
+  const now = new Date().toISOString();
+  const job: GenerationJob = { id: "88888888-8888-4888-8888-888888888888", tutorialId: id, revision: 1, kind: "generate", status: "running", stage: "animate", progress: 50, message: "Animating the steps from your video", budgetUsd: 25, spentUsd: 1, reservedUsd: 0, createdAt: now, updatedAt: now, error: null };
+  const tutorial: Tutorial = { ...example, id, ownerId: "guest-owner", isExample: false, status: "generating", visibility: "private", job, scene: null };
+  let newJobs = 0;
+  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, generationMode: "illustrated", services: { database: true, openai: true, worker: true }, user: { id: "guest-owner", email: "" } } }));
+  await page.route(`**/api/tutorials/${id}`, route => route.fulfill({ json: { tutorial } }));
+  await page.route("**/api/uploads?*", route => route.fulfill({ json: { uploads: [] } }));
+  await page.route(`**/api/jobs/${job.id}`, route => route.fulfill({ json: { job, tutorial } }));
+  await page.route(`**/api/tutorials/${id}/generate`, route => { newJobs++; return route.abort(); });
+  await page.goto(`/create?id=${id}`);
+  await expect(page.getByRole("heading", { name: "Your animation is taking shape." })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText(job.message, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop generation" })).toBeVisible();
+  await expect(page.getByText("Confirm", { exact: true })).not.toBeVisible();
+  expect(newJobs).toBe(0);
 });
 
 test("oversized footage stays on the upload screen with a clear next action", async ({ page }) => {
