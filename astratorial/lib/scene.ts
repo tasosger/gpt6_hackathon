@@ -7,6 +7,15 @@ export const sceneSchema = z
     title: z.string().min(1).max(100),
     description: z.string().min(1).max(600),
     background: color,
+    avatar: z
+      .object({
+        targetId: z.string(),
+        handOffset: vector,
+        standingPosition: vector,
+        size: z.number().min(0.2).max(3),
+      })
+      .strict()
+      .nullable(),
     objects: z
       .array(
         z
@@ -65,6 +74,8 @@ export function validateScene(value: unknown): SceneSpec {
       if (visited.size > 6) throw new Error("Object hierarchy is too deep.");
     }
   }
+  if (scene.avatar && !nodes.has(scene.avatar.targetId))
+    throw new Error("Avatar target does not exist.");
   return scene;
 }
 
@@ -99,6 +110,7 @@ export const exampleScene: SceneSpec = {
   description:
     "A local example built entirely from geometry. Describe a scene to create your own with Astra.",
   background: "#11141f",
+  avatar: null,
   objects: [
     object("sun", "sphere", [0, 0.5, 0], [1.35, 1.35, 1.35], "#ffb65c", {
       roughness: 0.7,
@@ -185,6 +197,7 @@ export const exampleWalkthrough: Walkthrough = {
         title: "Position the base",
         description: "Start with a stable foundation.",
         background: "#11141f",
+        avatar: null,
         objects: [desk, base],
       },
     },
@@ -197,6 +210,12 @@ export const exampleWalkthrough: Walkthrough = {
         description:
           "The movement shows where the upright aligns with the base.",
         background: "#11141f",
+        avatar: {
+          targetId: "stand",
+          handOffset: [0.1, 0.2, 0],
+          standingPosition: [-1.4, 0, 1],
+          size: 1,
+        },
         objects: [
           desk,
           base,
@@ -222,6 +241,7 @@ export const exampleWalkthrough: Walkthrough = {
         description:
           "An illustrative final arrangement; actual mounting mechanisms vary.",
         background: "#11141f",
+        avatar: null,
         objects: [desk, base, stand, monitor],
       },
     },

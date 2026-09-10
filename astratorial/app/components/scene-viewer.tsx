@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { createAvatar } from "@/lib/avatar";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { SceneObject, SceneSpec } from "@/lib/scene";
 
@@ -114,6 +115,16 @@ export default function SceneViewer({
       (object.parentId ? nodes.get(object.parentId)! : content).add(
         nodes.get(object.id)!,
       );
+    const binding = scene.avatar;
+    const avatar = binding
+      ? createAvatar(binding.size, binding.standingPosition)
+      : null;
+    if (avatar && binding) {
+      content.add(avatar.group);
+      world.updateMatrixWorld(true);
+      avatar.update(nodes.get(binding.targetId)!, binding.handOffset);
+    }
+    let previousReachable = true;
     const bounds = new THREE.Box3().setFromObject(content);
     const center = bounds.getCenter(new THREE.Vector3());
     const extent = Math.max(
@@ -187,6 +198,21 @@ export default function SceneViewer({
           node.position[b] = Math.sin(phase + initial) * motion.amplitude;
         }
       }
+      if (avatar && binding) {
+        world.updateMatrixWorld(true);
+        const reachable = avatar.update(
+          nodes.get(binding.targetId)!,
+          binding.handOffset,
+        );
+        if (reachable !== previousReachable) {
+          setError(
+            reachable
+              ? ""
+              : "Avatar hidden: this action is outside its reach. Follow the object demonstration; the avatar cannot demonstrate this step accurately.",
+          );
+          previousReachable = reachable;
+        }
+      }
       controls.update();
       renderer.render(world, camera);
     });
@@ -195,6 +221,7 @@ export default function SceneViewer({
       renderer.setAnimationLoop(null);
       renderer.domElement.removeEventListener("webglcontextlost", lost);
       controls.dispose();
+      avatar?.dispose();
       for (const mesh of meshes) {
         mesh.geometry.dispose();
         (mesh.material as THREE.Material).dispose();

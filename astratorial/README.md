@@ -64,3 +64,22 @@ npm run build
 Tests cover malformed scenes, unsafe/unsupported input, image request construction, missing configuration, model refusal, invalid output, rate-limit handling, and timeouts. Provider calls are mocked in tests; they do not prove live model generation quality. A real photo-to-scene run requires configured credentials.
 
 This is a local hackathon prototype, not a public multi-user deployment. Before exposing its paid generation endpoint publicly, add authentication, per-user quotas, persistent rate limits, and deployment-appropriate request limits. The origin check is not authentication. No site deployment was added.
+
+## Context and demonstration quality
+
+The versioned prompt lives in `lib/walkthrough-prompt.ts`. It separates role, photo evidence, task planning, geometry/materials, motion semantics, avatar bindings, and a pre-output consistency review. An optional context field accepts tools, constraints, skill level and prior attempts. This context is sent as structured user data rather than concatenated into the higher-priority instructions. Image detail is `high` and reasoning effort is `medium`; these can increase generation cost and latency. Output still uses the same bounded renderer rather than arbitrary generated code.
+
+## Avatar behavior
+
+Each scene declares `avatar: null` or a right-hand binding with `targetId`, `handOffset`, `standingPosition`, and `size`. The procedural avatar is created by the renderer, not separately invented by the model. Its palm copies the target contact position and orientation on each frame, and analytic two-bone IK preserves arm lengths. The avatar is hidden with a visible explanation if the contact becomes unreachable. The second local example step demonstrates this binding.
+
+This enforces kinematic palm alignment, not exact finger grasp, collision avoidance, balance, force, two-handed coordination or correctness of the model-selected grip. The current avatar is a stylized mannequin. Unclear or unsupported manipulations should use a static illustration and explicit instruction. Tests cover reach rejection and segment-length/contact invariants; no claim of biomechanical or live model quality validation is made.
+
+## Blender quality path
+
+Blender is not integrated in this branch. A future asynchronous worker can take a validated scene/action specification, generate geometry using trusted Python builders (or isolated agent-authored scripts), bevel edges, assign materials, rig an avatar, bake supported animation, and export GLB. Three.js would load that GLB and play a named action clip for each step. Keep the current procedural scene as a fast preview while the higher-quality asset is prepared.
+
+A browser GLB does not carry Blender's full rendering engine: procedural shaders and unsupported simulation/constraint behavior must be converted to supported textures, geometry and animation, and tested after export. Photorealistic Blender renders can be delivered as video, but lose free camera movement. The worker needs job limits, artifact validation and isolation for any generated Python. Better rendering does not itself verify instructional correctness.
+
+- https://docs.blender.org/manual/en/dev/advanced/command_line/render.html
+- https://docs.blender.org/manual/en/dev/addons/scene_gltf2.html

@@ -9,6 +9,11 @@ import {
 import { z } from "zod";
 registerHooks({
   resolve(specifier, context, next) {
+    if (specifier === "@/lib/walkthrough-prompt")
+      return next(
+        new URL("../lib/walkthrough-prompt.ts", import.meta.url).href,
+        context,
+      );
     if (specifier === "@/lib/scene")
       return next(new URL("../lib/scene.ts", import.meta.url).href, context);
     return next(specifier, context);
@@ -17,6 +22,7 @@ registerHooks({
 const { POST } = await import("../app/api/scenes/route.ts");
 const payload = {
   prompt: "Show how to assemble this stand",
+  context: "Only a Phillips screwdriver; the base is attached.",
   images: ["data:image/jpeg;base64,/9j/"],
 };
 const request = (data = payload, origin = "http://localhost:3000") =>
@@ -105,6 +111,12 @@ test("API sends photos with structured output and rejects invalid model response
     assert.equal(sent.input[0].content[1].type, "input_image");
     assert.equal(sent.input[0].content[1].image_url, payload.images[0]);
     assert.equal(sent.store, false);
+    assert.equal(
+      JSON.parse(sent.input[0].content[0].text).additionalContext,
+      payload.context,
+    );
+    assert.equal(sent.input[0].content[1].detail, "high");
+    assert.equal(sent.reasoning.effort, "medium");
     assert.equal(sent.text.format.strict, true);
     globalThis.fetch = async () =>
       Response.json({
@@ -129,4 +141,42 @@ test("API sends photos with structured output and rejects invalid model response
     if (oldKey === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = oldKey;
   }
+});
+
+test("avatar IK preserves contact and limb lengths, rejecting unreachable poses", async () => {
+  const { Vector3 } = await import("three");
+  const { solveArm, createAvatar } = await import("../lib/avatar.ts");
+  const { Object3D } = await import("three");
+  const shoulder = new Vector3(0.34, 1.65, 0);
+  for (const wrist of [
+    new Vector3(1, 1, 0),
+    new Vector3(0.34, 1, 0),
+    new Vector3(0.5, 2, 0.3),
+  ]) {
+    const elbow = solveArm(shoulder, wrist, 0.95);
+    assert.ok(elbow);
+    assert.ok(Math.abs(shoulder.distanceTo(elbow) - 0.95) < 1e-6);
+    assert.ok(Math.abs(wrist.distanceTo(elbow) - 0.95) < 1e-6);
+  }
+  assert.equal(solveArm(shoulder, new Vector3(10, 0, 0), 0.95), null);
+  const avatar = createAvatar(1, [0, 0, 0]);
+  const target = new Object3D();
+  target.position.set(1, 1, 0);
+  target.updateMatrixWorld();
+  assert.equal(avatar.update(target, [0, 0, 0]), true);
+  const palm = avatar.group.children[7];
+  assert.ok(palm.position.distanceTo(target.position) < 1e-6);
+  target.position.x = 10;
+  target.updateMatrixWorld();
+  assert.equal(avatar.update(target, [0, 0, 0]), false);
+  assert.equal(avatar.group.visible, false);
+  avatar.dispose();
+  const bad = structuredClone(exampleWalkthrough);
+  bad.steps[0].scene.avatar = {
+    targetId: "missing",
+    handOffset: [0, 0, 0],
+    standingPosition: [0, 0, 0],
+    size: 1,
+  };
+  assert.throws(() => validateWalkthrough(bad));
 });

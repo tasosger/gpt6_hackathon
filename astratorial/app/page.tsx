@@ -16,6 +16,7 @@ const SceneViewer = dynamic(() => import("./components/scene-viewer"), {
 
 export default function Home() {
   const [prompt, setPrompt] = useState("");
+  const [context, setContext] = useState("");
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [tutorial, setTutorial] = useState<Walkthrough>(exampleWalkthrough);
   const [stepIndex, setStepIndex] = useState(0);
@@ -73,6 +74,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
+          context,
           images: photos.map((photo) => photo.dataUrl),
         }),
         signal: controller.signal,
@@ -210,6 +212,23 @@ export default function Home() {
               />
               <span className="character-count">{prompt.length} / 2,000</span>
             </div>
+            <details className="scene-context">
+              <summary>Add context (optional)</summary>
+              <label htmlFor="task-context">
+                Tools, constraints, and what you have tried
+              </label>
+              <div className="prompt-box">
+                <textarea
+                  id="task-context"
+                  value={context}
+                  disabled={busy}
+                  maxLength={2000}
+                  rows={3}
+                  onChange={(event) => setContext(event.target.value)}
+                  placeholder="I have a Phillips screwdriver. The base is already attached. I’m new to this."
+                />
+              </div>
+            </details>
             <button
               className="generate-button"
               type="submit"
