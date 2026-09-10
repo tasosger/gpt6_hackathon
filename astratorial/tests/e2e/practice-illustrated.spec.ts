@@ -33,7 +33,7 @@ test("positions illustrated ghost hands without landmarks, checks a step, and re
       return stream;
     }});
   });
-  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, generationMode: "illustrated", services: { database: true, openai: true, worker: true }, user: { id: "fixture-owner", email: "" } } }));
+  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, generationMode: "illustrated", services: { database: true, openai: true, worker: true }, user: { id: "fixture-owner" } } }));
   await page.route(`**/api/tutorials/${id}`, route => route.fulfill({ json: { tutorial } }));
   await page.route("**/illustrated-fixture.glb", route => route.fulfill({ path: path.join(process.cwd(), "tests/fixtures/animated-scene.glb"), contentType: "model/gltf-binary" }));
   await page.route("**/api/practice", route => route.fulfill({ json: { session } }));

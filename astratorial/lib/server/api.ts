@@ -8,6 +8,8 @@ import { createTutorialSchema, hydrateTutorial, newTutorial, ownedTutorial, publ
 import { actionSchema, applyPracticeAction, applyStepCheck, unconfirmedMovableObjects } from "./practice";
 import { checkStep, askExpert } from "./openai";
 import { endVoice, requireWorkerToken, startVoice, voiceInput } from "./voice";
+import { readWorkerStatus } from "@/lib/local/runtime";
+import { uploadConfiguration } from "./uploads";
 
 const uuid = z.string().uuid();
 const uploadSchema = z.object({tutorialId:uuid,name:z.string().min(1).max(200),mimeType:z.string().max(100),size:z.number().int().positive().max(50_000_000),kind:CaptureAssetSchema.shape.kind,pass:CaptureAssetSchema.shape.pass,clientFingerprint:z.string().regex(/^[a-f0-9]{64}$/).optional()});
@@ -18,11 +20,12 @@ export const handleApi = api(async (request:Request) => {
   const url=new URL(request.url);
   if (!["GET","HEAD","OPTIONS"].includes(request.method)) assertRequestOrigin(request);
   const parts=url.pathname.replace(/^\/api\//,"").split("/").filter(Boolean); const method=request.method;
+  if (parts[0]==="runtime" && parts.length===1 && method==="GET") return json({worker:await readWorkerStatus()});
   if (parts[0]==="config" && method==="GET") {
     const status=services(); const user=status.database ? await currentUser() : null;
-    const config:AppConfig={generationMode:"illustrated",configured:status.database&&status.openai&&status.worker,services:status,user:user?{id:user.id,email:user.email||""}:null};return json(config);
+    const config:AppConfig={generationMode:"illustrated",configured:status.database&&status.openai&&status.worker,services:status,user:user?{id:user.id}:null};return json(config);
   }
-  if(parts[0]==="auth") return authRoute(request,parts[1]);
+  if(parts[0]==="auth"&&parts[1]==="guest"&&parts.length===2) return guestSession(request);
   if(parts[0]==="internal"&&parts[1]==="voice") return internalVoiceRoute(request,uuid.parse(parts[2]),parts[3]);
   if(parts[0]==="tutorials") {
     if(parts.length===1) {
@@ -75,15 +78,17 @@ export const handleApi = api(async (request:Request) => {
   fail(404,"This endpoint does not exist.");
 });
 
-async function authRoute(request:Request,action:string) {
+async function guestSession(request:Request) {
   if(request.method!=="POST")fail(405,"Use POST for this action.");
   const client=await supabaseServer();
-  if(action==="guest") { const {data:existing}=await client.auth.getUser(); if(existing.user)return json({user:{id:existing.user.id,email:existing.user.email||""}}); const {data,error}=await client.auth.signInAnonymously(); if(error||!data.user)fail(503,"We could not start your workspace. Please try again."); return json({user:{id:data.user.id,email:data.user.email||""}}); }
-  if(action==="logout") {assertRequestOrigin(request);const {error}=await client.auth.signOut();if(error)fail(503,"We could not sign out. Please try again.");return json({ok:true});}
-  const input=await body(request);
-  if(action==="otp") {const {email}=z.object({email:z.string().email().max(254)}).parse(input);const {error}=await client.auth.signInWithOtp({email,options:{shouldCreateUser:true}});if(error)fail(error.status===429?429:503,"We could not send your sign-in code. Wait a moment and try again.");return json({sent:true});}
-  if(action==="verify") {const {email,token}=z.object({email:z.string().email(),token:z.string().regex(/^\d{6,10}$/)}).parse(input);const {data,error}=await client.auth.verifyOtp({email,token,type:"email"});if(error||!data.user)fail(400,"That code is invalid or has expired. Request a new code.");return json({user:{id:data.user.id,email:data.user.email}});}
-  fail(404,"This sign-in action is unavailable.");
+  const {data:existing,error:existingError}=await client.auth.getUser();
+  if(!existingError&&existing.user)return json({user:{id:existing.user.id}});
+  const {data,error}=await client.auth.signInAnonymously();
+  if(error?.code==="anonymous_provider_disabled"||error?.code==="signup_disabled")fail(503,"Guest uploads haven’t been enabled for this app yet. The app owner needs to fix this before uploads can start. Your video is still on this device.","guest_session_disabled");
+  if(error?.status===429)fail(429,"Too many connection attempts. Wait a minute, then try again. Your video is still on this device.","guest_rate_limited");
+  if(error?.code==="captcha_failed")fail(503,"This app is requesting a verification step that isn’t available here. The app owner needs to fix this before uploads can start. Your video is still on this device.","guest_verification_required");
+  if(error||!data.user)fail(503,"We couldn’t connect your private workspace. Check the connection and try again. Your video is still on this device.","guest_session_failed");
+  return json({user:{id:data.user.id}});
 }
 
 async function patchTutorial(request:Request,id:string) {
@@ -118,11 +123,6 @@ async function startUpload(request:Request) {
   const asset=CaptureAssetSchema.parse({id,path,name:input.name,mimeType:input.mimeType,size:input.size,kind:input.kind,pass:input.pass});const db=supabaseAdmin();
   const inserted=await db.rpc("register_upload",{p_id:id,p_owner_id:user.id,p_tutorial_id:tutorial.id,p_revision:tutorial.revision,p_asset:asset,p_client_fingerprint:input.clientFingerprint||null});dbError(inserted.error);
   return json(await uploadConfiguration(id,asset),201);
-}
-async function uploadConfiguration(uploadId:string,asset:z.infer<typeof CaptureAssetSchema>) {
-  const result=await supabaseAdmin().storage.from("captures").createSignedUploadUrl(asset.path,{upsert:false});dbError(result.error);
-  const base=new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!);if(base.hostname.endsWith(".supabase.co"))base.hostname=base.hostname.replace(".supabase.co",".storage.supabase.co");
-  return {uploadId,asset,endpoint:`${base.origin}/storage/v1/upload/resumable`,headers:{"x-signature":result.data!.token},metadata:{bucketName:"captures",objectName:asset.path,contentType:asset.mimeType,cacheControl:"3600"},chunkSize:6*1024*1024};
 }
 async function renewUpload(uploadId:string) {
   const user=await requireUser();const db=supabaseAdmin();const {data:upload,error}=await db.from("uploads").select("asset,tutorial_id,revision").eq("id",uploadId).eq("owner_id",user.id).maybeSingle();dbError(error);if(!upload)fail(404,"This upload is unavailable.");

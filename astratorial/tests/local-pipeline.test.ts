@@ -5,8 +5,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { runLocalClaim } from "../lib/local/pipeline";
 import type { GenerationJob, Tutorial, TutorialPlan } from "../lib/contracts";
 import type { Illustration } from "../lib/local/scene";
+import { LocalFailure } from "../lib/local/failures";
 
 const ai=vi.hoisted(()=>({parse:vi.fn(),speech:vi.fn()}));
+const rendering=vi.hoisted(()=>({error:null as Error|null}));
 vi.mock("openai",async(importOriginal)=>{
   const original=await importOriginal<typeof import("openai")>();
   class MockOpenAI {
@@ -18,6 +20,7 @@ vi.mock("openai",async(importOriginal)=>{
 });
 vi.mock("node:child_process",()=>({execFile:(_program:unknown,_args:unknown,_options:unknown,callback:(error:null,result:{stdout:string;stderr:string})=>void)=>callback(null,{stdout:"5",stderr:""})}));
 vi.mock("../lib/local/render",()=>({renderIllustration:async(_glb:unknown,_manifest:unknown,directory:string)=>{
+  if(rendering.error)throw rendering.error;
   const poster=join(directory,"poster.jpg");await writeFile(poster,"preview");return {poster};
 }}));
 
@@ -45,6 +48,7 @@ function database(options:{denyBudget?:boolean;cancelAtPlan?:boolean}={}) {
 }
 beforeEach(()=>{
   vi.clearAllMocks();ai.parse.mockReset();ai.speech.mockReset();vi.stubEnv("OPENAI_API_KEY","test-key");
+  rendering.error=null;
   ai.speech.mockResolvedValue(new Response("narration"));
 });
 afterEach(()=>{vi.unstubAllEnvs();vi.restoreAllMocks();});
@@ -101,6 +105,33 @@ describe("single-video illustrated generation",()=>{
     await runLocalClaim(db,{job,tutorial,checkpoint:{ingest}},"worker");
     expect(ai.parse).not.toHaveBeenCalled();
     expect(saves.at(-1)?.p_status).toBe("budget_paused");
+  });
+
+  it("explains a missing preview browser and resumes without paying to repeat saved work",async()=>{
+    vi.spyOn(console,"error").mockImplementation(()=>{});
+    ai.parse.mockResolvedValueOnce({output_parsed:illustration});
+    rendering.error=new LocalFailure("renderer_browser_missing","The 3D preview browser is not installed. Install Chromium, then retry. Your animation and narration are saved.");
+    const first=database();
+    await runLocalClaim(first.db,{job,tutorial,checkpoint:{ingest,plan}},"worker");
+    const failed=first.saves.at(-1)!;
+    expect(failed).toMatchObject({p_stage:"validate",p_status:"failed",p_progress:90,p_message:expect.stringContaining("Install Chromium"),p_checkpoint:{illustration,narration:{fill:expect.objectContaining({duration:6})},scene:{mode:"illustrated"}}});
+    rendering.error=null;ai.parse.mockClear();ai.speech.mockClear();
+    const resumed=database();
+    await runLocalClaim(resumed.db,{job,tutorial,checkpoint:failed.p_checkpoint},"worker");
+    expect(resumed.saves.at(-1)?.p_status).toBe("completed");
+    expect(ai.parse).not.toHaveBeenCalled();expect(ai.speech).not.toHaveBeenCalled();
+    expect(resumed.rpc.mock.calls.some(([name])=>name==="reserve_job_cost")).toBe(false);
+  });
+
+  it("never copies a raw dependency error, URL, or credential into a failed job or log",async()=>{
+    const log=vi.spyOn(console,"error").mockImplementation(()=>{});
+    ai.parse.mockResolvedValueOnce({output_parsed:illustration});
+    rendering.error=new Error("fetch https://private.invalid/file?token=private-token failed sk-secret-fixture");
+    const {db,saves}=database();
+    await runLocalClaim(db,{job,tutorial,checkpoint:{ingest,plan}},"worker");
+    expect(saves.at(-1)).toMatchObject({p_stage:"validate",p_status:"failed",p_message:expect.stringContaining("Creating the 3D preview")});
+    const output=JSON.stringify({saves,logs:log.mock.calls});
+    expect(output).not.toContain("private.invalid");expect(output).not.toContain("private-token");expect(output).not.toContain("sk-secret-fixture");
   });
 
   it("honors cancellation between inferred steps and animation",async()=>{

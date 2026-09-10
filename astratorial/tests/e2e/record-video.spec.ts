@@ -67,8 +67,8 @@ test("finishing a camera recording automatically builds one animation and releas
       },
     });
   });
-  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, generationMode: "illustrated", services: { database: true, openai: true, worker: true }, user: guest ? { id: "recording-owner", email: "" } : null } }));
-  await page.route("**/api/auth/guest", route => { guest = true; order.push("guest"); return route.fulfill({ json: { user: { id: "recording-owner", email: "" } } }); });
+  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, generationMode: "illustrated", services: { database: true, openai: true, worker: true }, user: guest ? { id: "recording-owner" } : null } }));
+  await page.route("**/api/auth/guest", route => { guest = true; order.push("guest"); return route.fulfill({ json: { user: { id: "recording-owner" } } }); });
   await page.route("**/api/tutorials", route => {
     expect(route.request().postDataJSON().goal).toBeUndefined();
     order.push("draft");

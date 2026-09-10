@@ -10,6 +10,8 @@ Personal tutorials built around your room, tools, and goal. The app uses Next.js
 
 The spoken goal takes priority over other plausible tasks in the scene. Astra uses visible or mentioned tools and ingredients, makes reasonable everyday assumptions, and omits optional extras. If processing fails, retry the saved job within its existing allowance; reloading the page restores progress.
 
+After selecting a video, the page shows connection, upload and processing progress immediately. Failed transfers retain the selected file and offer a resumable retry. A stopped worker is identified separately from a storage or AI error. See [upload feedback and recovery](docs/upload-feedback.md).
+
 Astra produces validated scene data, and Three.js turns it into an animated GLB with a generic instructor, objects and hand gestures. The same scene supports narrated video export. This is an **illustrated tutorial informed by the video**, with approximate object placement and manual guide alignment. It does not reconstruct measured surfaces or a photorealistic replica. No additional agent SDK, GPU worker or paid hosting service is required.
 
 ## Run everything on this computer
@@ -42,6 +44,7 @@ Fill the ignored `.env.local` with:
 - `OPENAI_API_KEY`: a server-side key with access to the configured models.
 - `LOCAL_VOICE_URL=http://127.0.0.1:8766/voice`.
 - `LOCAL_WORKER_TOKEN`: a long random secret shared by the local website and voice supervisor.
+- `NEXT_PUBLIC_APP_URL=http://localhost:4173`: the browser address permitted to upload, even when the server listens on `0.0.0.0`.
 
 Only the project URL and anon key use `NEXT_PUBLIC_` names. Never commit `.env.local` or put secret values in source files. The configured model defaults are `gpt-6-astra`, `gpt-realtime-2.1`, `gpt-transcribe` and `gpt-4o-mini-tts`; unavailable models return a setup error instead of silently switching.
 
@@ -50,7 +53,7 @@ Only the project URL and anon key use `NEXT_PUBLIC_` names. Never commit `.env.l
 - `supabase/migrations/202609100001_astratorial.sql`
 - `supabase/migrations/202609100002_free_hackathon.sql`
 
-Enable and save **Authentication → Sign In / Providers → Allow anonymous sign-ins**. A guest receives their own authenticated user ID and private rows. Guest access belongs to that browser: clearing its cookies loses access to its library. Email sign-in is optional and creates a separate account; guest-to-email migration is not implemented. See [backend setup](docs/backend.md).
+Enable and save **Authentication → Sign In / Providers → Allow anonymous sign-ins**. Everyone uses an anonymous guest session, created automatically when they upload or adapt a shared tutorial. Each guest receives their own authenticated user ID and private rows. The library belongs to that browser: clearing its cookies loses access to it. The app has no sign-in, account or settings pages. See [backend setup](docs/backend.md).
 
 The free setup accepts videos up to **50 MB**. The recorder uses a lower bitrate and a 90-second limit. Short 10–30 second clips are the best starting point. Capture reservations are capped at 200 MB per tutorial and 500 MB across the project, leaving room for derived files within free storage.
 
@@ -102,7 +105,7 @@ worker/.venv/bin/python -m unittest discover -s worker/tests -p test_local_voice
 
 The database test script uses a disposable local PostgreSQL cluster and a queue test double; it never targets a configured project. Set `PLAYWRIGHT_BASE_URL` for another test origin or `PLAYWRIGHT_CHROMIUM_EXECUTABLE` for an existing Chromium binary.
 
-Real espresso, cooking and assembly footage still need complete upload-to-practice acceptance, including interrupted uploads, denied permissions, voice interruption, cancellation, budget exhaustion, publication and account isolation. Physical-phone performance and overlay usefulness require actual device checks. See [the verification record](docs/verification.md) for executed checks and their limits.
+Real espresso, cooking and assembly footage still need complete upload-to-practice acceptance, including interrupted uploads, denied permissions, voice interruption, cancellation, budget exhaustion, publication and guest isolation. Physical-phone performance and overlay usefulness require actual device checks. See [the verification record](docs/verification.md) for executed checks and their limits.
 
 ## Project map
 

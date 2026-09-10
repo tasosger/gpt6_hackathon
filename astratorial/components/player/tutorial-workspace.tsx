@@ -9,7 +9,7 @@ import { getExample } from "@/lib/examples";
 import type { Tutorial } from "@/lib/contracts";
 import { useVoice } from "@/lib/use-voice";
 import { useRouter } from "next/navigation";
-import { api, ApiError, useAppConfig } from "@/lib/client";
+import { api, ApiError, post, useAppConfig } from "@/lib/client";
 import type { CameraMode } from "./scene-viewer";
 
 const SceneViewer = dynamic(() => import("./scene-viewer"), { ssr: false, loading: () => <div className="scene-unavailable">Loading the 3D player…</div> });
@@ -17,7 +17,7 @@ const seconds = (time: number) => `${Math.floor(time / 60)}:${String(Math.floor(
 
 export default function TutorialWorkspace({ id }: { id: string }) {
   const router = useRouter();
-  const { config } = useAppConfig();
+  const { config, refresh } = useAppConfig();
   const [tutorial, setTutorial] = useState<Tutorial | null>(() => getExample(id) ?? null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!getExample(id));
@@ -165,12 +165,10 @@ export default function TutorialWorkspace({ id }: { id: string }) {
   }
   const onSceneError = useCallback((message: string) => { setNotice(detailed ? `${message} Switching back to the mobile scene.` : `${message} Refresh this page to renew the scene link if it expired.`); if (detailed) setDetailed(false); }, [detailed]);
   async function adapt() {
-    if (!config?.user) { router.push(`/login?next=${encodeURIComponent(window.location.pathname)}`); return; }
     setBusy(true); setNotice("");
     try {
-      const response = await fetch(`/api/tutorials/${id}/adapt`, { method: "POST" });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error?.message || result.error || "This tutorial could not be adapted.");
+      if (!config?.user) { await post("/api/auth/guest"); await refresh(); }
+      const result = await post<{ tutorial: Tutorial }>(`/api/tutorials/${id}/adapt`);
       router.push(`/create?id=${result.tutorial.id}`);
     } catch (cause) { setNotice(cause instanceof Error ? cause.message : "Please try again."); } finally { setBusy(false); }
   }
@@ -214,7 +212,7 @@ export default function TutorialWorkspace({ id }: { id: string }) {
   }, [shareJob, id]);
 
   if (loading) return <div className="player-page"><div className="scene-unavailable"><span className="spinner" />Opening your tutorial…</div></div>;
-  if (!tutorial) return <div className="player-page"><Link href="/library" className="player-back"><ArrowLeft size={16} />Back to library</Link><div className="panel player-empty"><h1>Tutorial unavailable</h1><p>{error || "This tutorial may be private or no longer available."}</p><Link className="button button-primary" href="/login">Sign in</Link></div></div>;
+  if (!tutorial) return <div className="player-page"><Link href="/library" className="player-back"><ArrowLeft size={16} />Back to library</Link><div className="panel player-empty"><h1>Tutorial unavailable</h1><p>{error || "This tutorial may be private or no longer available."}</p><Link className="button button-primary" href="/explore">Explore tutorials</Link></div></div>;
   return <div className="player-page">
     <div className="player-breadcrumb"><Link href="/library"><ArrowLeft size={15} />Your library</Link><span>/</span><span>{tutorial.category === "coffee" ? "Coffee & drinks" : tutorial.category === "assembly" ? "Make & assemble" : tutorial.category === "cooking" ? "In the kitchen" : "Around the home"}</span></div>
     <header className="tutorial-heading"><div><div className="eyebrow"><span className="live-dot" />{tutorial.isExample ? "INTERACTIVE EXAMPLE" : tutorial.scene?.mode === "illustrated" ? "ILLUSTRATED TUTORIAL" : "MADE FOR YOUR SPACE"}</div><h1>{tutorial.title}</h1><p>{tutorial.description}</p></div><div className="tutorial-heading-actions"><button className="button button-secondary" onClick={() => { setPlaying(false); setShareOpen(true); }}><Share2 size={16} />Share</button>{videoAsset?.url && <a className="icon-button" href={videoAsset.url} download title="Download narrated tutorial"><Download size={18} /></a>}</div></header>

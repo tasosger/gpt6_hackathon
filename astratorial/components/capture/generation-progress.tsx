@@ -1,61 +1,85 @@
 "use client";
 import Link from "next/link";
 import { tutorialHref, type GenerationJob, type Tutorial } from "@/lib/contracts";
+import { errorMessage } from "@/lib/client";
 import { Icon } from "@/components/shell/icon";
-import { useAppConfig } from "@/lib/client";
-const allStages = [{ id: "ingest", label: "Prepare your captures" }, { id: "analyze", label: "Get to know your space" }, { id: "reconstruct", label: "Rebuild the details" }, { id: "plan", label: "Put the steps in order" }, { id: "animate", label: "Bring your guide to life" }, { id: "render", label: "Make your walkthrough" }, { id: "validate", label: "Check everything comes together" }];
-type ProgressProps = { job: GenerationJob | null; tutorial: Tutorial | null; busy: boolean; onCancel: () => void; onResume: () => void; onContext?: () => void };
 
-export function GenerationProgress(props: ProgressProps) {
-  const { config } = useAppConfig();
-  return config?.generationMode === "measured" ? <MeasuredGenerationProgress {...props} /> : <AnimationProgress {...props} />;
-}
-
-function MeasuredGenerationProgress({ job, tutorial, busy, onCancel, onResume, onContext }: ProgressProps) {
-  const { config } = useAppConfig();
-  const stages = config?.generationMode === "illustrated" ? allStages.filter(stage => stage.id !== "reconstruct") : allStages;
-  const active = job ? stages.findIndex((stage) => stage.id === job.stage) : -1;
-  return <div><h2 className="subheading">{job?.status === "completed" ? "Your tutorial is ready." : job ? "Creating your tutorial." : "Ready to bring it to life?"}</h2><p className="section-description">{job ? job.message : "Your captures become a personal 3D walkthrough, with clear steps and a guide you can talk to."}</p><div className="generation-summary"><div><small>Generation allowance</small><strong>${(job?.budgetUsd ?? 25).toFixed(2)}</strong></div><div><small>Used so far</small><strong>${(job?.spentUsd ?? 0).toFixed(2)}</strong></div><div><small>Visibility</small><strong>Only you</strong></div></div>{job && <><div className="generation-progress"><div><span>{job.status === "running" ? "Making steady progress" : job.status.replace("_", " ")}</span><span>{Math.round(job.progress)}%</span></div><div className="progress-track"><span style={{ width: `${job.progress}%` }} /></div></div>{stages.map((stage, index) => <div className={`job-stage ${index < active || job.status === "completed" ? "complete" : index === active ? "active" : ""}`} key={stage.id}><span>{index < active || job.status === "completed" ? <Icon name="check" size={13} /> : index === active && job.status === "running" ? <span className="spinner" style={{ width: 12, height: 12 }} /> : index + 1}</span><span>{stage.label}</span>{index === active && job.status === "running" && <span>In progress</span>}</div>)}{job.error && <div className="notice notice-error notice-inline" role="alert">{job.error}</div>}<p className="generation-message">{job.status === "budget_paused" ? "We’ve paused before committing more resources. Your current results are saved. No additional allowance is authorized." : job.status === "needs_context" ? "Your guide needs a little more information. Add the requested context, then analyze your captures again." : job.status === "cancelled" ? "Generation has been stopped. Your captures and completed work are saved." : job.status === "running" || job.status === "queued" ? "Your progress is saved. You can find this tutorial in My tutorials." : "Your original captures remain private."}</p><div className="button-row">{job.status === "completed" && tutorial?.status === "ready" ? <Link href={tutorialHref(tutorial)} className="button button-primary">Watch my tutorial<Icon name="arrow" size={17} /></Link> : job.status === "needs_context" ? <button className="button button-primary" onClick={onContext}>Add a little context<Icon name="arrow" size={16} /></button> : job.status === "running" || job.status === "queued" ? <button className="button button-secondary" disabled={busy} onClick={onCancel}>Stop generation</button> : job.status === "failed" || job.status === "cancelled" ? <button className="button button-secondary" disabled={busy} onClick={onResume}><Icon name="refresh" size={16} />Retry within existing allowance</button> : null}<Link href="/library" className="button button-quiet">Back to my tutorials</Link></div></>}</div>;
-}
-
-
-const animationStages = [
-  { label: "Understand your video", description: "Finding your goal and the things around you." },
-  { label: "Plan with what you have", description: "Turning your goal into clear, practical steps." },
-  { label: "Build your animation", description: "Bringing the steps to life in your space." },
+type ProgressProps = {
+  job: GenerationJob | null;
+  tutorial: Tutorial | null;
+  busy: boolean;
+  onCancel: () => void;
+  onResume: () => void;
+  onContext?: () => void;
+  worker?: { status: "ready" | "offline" | "unreachable"; message: string } | null;
+};
+const stages = [
+  { id: "ingest", label: "Prepare your video", description: "Reading the video and listening to your spoken instructions." },
+  { id: "analyze", label: "Understand your video", description: "Finding your goal and identifying the things around you." },
+  { id: "plan", label: "Plan your steps", description: "Working out how to reach your goal with what you have." },
+  { id: "animate", label: "Build your animation", description: "Creating your workspace, guide, and gestures." },
+  { id: "render", label: "Add the walkthrough", description: "Recording narration and preparing your tutorial assets." },
+  { id: "validate", label: "Check your tutorial", description: "Checking that the finished scene is ready to play." },
 ];
 
-function AnimationProgress({ job, tutorial, busy, onCancel, onResume }: ProgressProps) {
-  const ready = tutorial?.status === "ready";
-  const running = !job || job.status === "running" || job.status === "queued";
+export function GenerationProgress({ job, tutorial, busy, onCancel, onResume, onContext, worker }: ProgressProps) {
+  const ready = tutorial?.status === "ready" && !!tutorial.scene;
+  const running = job?.status === "running";
+  const queued = job?.status === "queued";
   const retryable = !!job && ["failed", "cancelled", "needs_context"].includes(job.status);
   const paused = job?.status === "budget_paused";
-  const stage = !job || ["upload", "ingest", "analyze"].includes(job.stage) ? 0 : job.stage === "plan" || job.stage === "reconstruct" ? 1 : 2;
-  const title = ready ? "Ready to watch." : paused ? "Your animation is paused." : job?.status === "cancelled" ? "Your animation is stopped." : retryable ? "Let’s try that again." : animationStages[stage].label;
-  const message = ready ? "Your personal guide is ready. Watch the steps and try them yourself." : retryable ? "Your video and completed work are saved. You can retry with the same video." : paused ? `Your progress is saved. Generation has reached its $${(job?.budgetUsd ?? 25).toFixed(2)} allowance.` : job?.status === "completed" ? "Opening your finished animation…" : job?.message || animationStages[stage].description;
+  const completed = job?.status === "completed";
+  const stage = Math.max(0, stages.findIndex(item => item.id === (job?.stage === "reconstruct" ? "plan" : job?.stage)));
+  const savedVideo = !!tutorial?.assets.some(asset => asset.kind === "video");
+  const progress = Math.min(100, Math.max(0, Math.round(job?.progress ?? 0)));
+  const title = ready ? "Ready to watch."
+    : queued ? "Waiting to start."
+    : paused ? "Generation is paused."
+    : job?.status === "cancelled" ? "Generation stopped."
+    : job?.status === "failed" ? "We couldn’t finish this tutorial."
+    : job?.status === "needs_context" ? "We need a clearer view."
+    : completed ? "Loading the finished tutorial…"
+    : running ? stages[stage].label : "Starting your tutorial…";
+  const message = ready ? "Your personal guide is ready. Watch the steps and try them yourself."
+    : queued ? worker?.status === "offline" || worker?.status === "unreachable"
+      ? "Your video is waiting for the local worker. Analysis starts automatically when it is available."
+      : "Your video is in the queue. Analysis starts automatically when the local worker picks it up."
+    : paused ? `We paused before spending beyond your $${(job?.budgetUsd ?? 25).toFixed(2)} generation allowance. Your completed work is saved.`
+    : job?.status === "cancelled" ? "No more steps are being started. You can resume this tutorial when you’re ready."
+    : job?.status === "failed" ? savedVideo ? "Your uploaded video is saved. Review what went wrong below, then retry to continue." : "Review what went wrong below. You can retry when the issue is resolved."
+    : job?.status === "needs_context" ? "The video did not provide enough information to finish confidently. See the detail below before retrying."
+    : completed ? "Processing is complete. Retrieving the playable scene…"
+    : job?.message ? errorMessage(new Error(job.message)) : stages[stage].description;
   return <div>
-    <div className="analysis-state">
-      <span className="analysis-orb"><Icon name={ready ? "check" : "sparkles"} size={31} /></span>
+    <div className="analysis-state" role="status" aria-live="polite" aria-atomic="true">
+      <span className={`analysis-orb ${running ? "" : "is-still"}`}><Icon name={ready ? "check" : retryable || paused ? "info" : "sparkles"} size={31} /></span>
       <h2 className="subheading">{title}</h2>
-      <p className="section-description" aria-live="polite">{message}</p>
+      <p className="section-description">{message}</p>
     </div>
     {!ready && <>
       <div className="generation-progress">
-        <div><span>{running ? "Creating your animation" : paused ? "Paused" : retryable ? "Progress saved" : "Finishing up"}</span><span>{Math.round(job?.progress ?? 0)}%</span></div>
-        <div className="progress-track" role="progressbar" aria-label="Animation progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(job?.progress ?? 0)}><span style={{ width: `${job?.progress ?? 0}%` }} /></div>
+        <div><span>{queued ? "Queued · waiting for processing" : running ? "In progress" : paused ? "Paused at the generation allowance" : retryable ? "Stopped at the last saved step" : "Finishing up"}</span><span>{progress}%</span></div>
+        <div className="progress-track" role="progressbar" aria-label="Animation progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div>
       </div>
-      {animationStages.map((item, index) => <div className={`job-stage ${index < stage ? "complete" : index === stage ? "active" : ""}`} key={item.label}>
-        <span>{index < stage ? <Icon name="check" size={13} /> : index === stage && running ? <span className="spinner" style={{ width: 12, height: 12 }} /> : index + 1}</span>
-        <span>{item.label}</span>
-        {index === stage && running && <span>In progress</span>}
-      </div>)}
+      <div className="generation-stages" aria-label="Tutorial stages">
+        {stages.map((item, index) => {
+          const done = completed || (!queued && index < stage);
+          const active = !completed && index === stage;
+          return <div className={`job-stage ${done ? "complete" : active && running ? "active" : ""}`} key={item.id} aria-current={active && running ? "step" : undefined}>
+            <span>{done ? <Icon name="check" size={13} /> : active && running ? <span className="spinner" style={{ width: 12, height: 12 }} /> : index + 1}</span>
+            <span>{item.label}</span>
+            <span>{done ? "Done" : active && running ? "In progress" : active && queued ? "Waiting" : active && retryable ? "Stopped" : ""}</span>
+          </div>;
+        })}
+      </div>
     </>}
-    {job?.error && <div className="notice notice-error notice-inline" role="alert">{job.error}</div>}
-    <p className="generation-message">{running ? "Your progress is saved. You can return to it from My tutorials." : "Your original video stays private."}</p>
+    {job?.error && <div className="notice notice-error notice-inline" role="alert"><Icon name="info" size={16} /><span>{errorMessage(new Error(job.error))}</span></div>}
+    <p className="generation-message">{savedVideo ? "Your uploaded video and completed work are saved in My tutorials. Your original video stays private." : "Your original video stays private."}</p>
     <div className="button-row">
       {ready && tutorial ? <Link href={tutorialHref(tutorial)} className="button button-primary">Watch my tutorial<Icon name="arrow" size={17} /></Link>
-        : running && job ? <button className="button button-secondary" disabled={busy} onClick={onCancel}>Stop generation</button>
-        : retryable ? <button className="button button-secondary" disabled={busy} onClick={onResume}><Icon name="refresh" size={16} />Try again</button>
+        : (running || queued) && job ? <button className="button button-secondary" disabled={busy} onClick={onCancel}>{busy ? <><span className="spinner" />Stopping…</> : "Stop generation"}</button>
+        : job?.status === "needs_context" && onContext ? <button className="button button-secondary" disabled={busy} onClick={onContext}>Add a little context</button>
+        : retryable ? <button className="button button-secondary" disabled={busy} onClick={onResume}>{busy ? <><span className="spinner" />Restarting…</> : <><Icon name="refresh" size={16} />Try again</>}</button>
         : null}
       <Link href="/library" className="button button-quiet">Back to my tutorials</Link>
     </div>

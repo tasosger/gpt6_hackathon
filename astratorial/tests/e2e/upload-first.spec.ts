@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { CaptureAsset, GenerationJob, Tutorial } from "../../lib/contracts";
+import type { CaptureAsset, GenerationJob, SceneManifest, Tutorial } from "../../lib/contracts";
 import { getExample } from "../../lib/examples";
 
 test("one video starts animation generation without login, a typed goal, or any follow-up", async ({ page, baseURL }) => {
@@ -8,6 +8,15 @@ test("one video starts animation generation without login, a typed goal, or any 
   const endpoint = new URL("/fixture-upload-first", baseURL).href;
   const asset: CaptureAsset = { id: uploadId, path: `${id}/counter.webm`, name: "counter.webm", mimeType: "video/webm", size: 100, kind: "video", pass: "room" };
   const example = getExample("example-espresso")!;
+  const scene: SceneManifest = {
+    mode: "illustrated", version: 1, units: "meters", durationSeconds: 10,
+    assets: [{ path: `${id}/scene.glb`, kind: "scene", url: "/fixture-scene.glb" }],
+    cameras: { first: { position: [0, 1.6, 1], target: [0, 1.1, 0] }, third: { position: [2, 2, 3], target: [0, 1, 0] } },
+    bounds: { min: [-3, 0, -3], max: [3, 3, 3] }, landmarks: [], objects: [],
+    steps: [{ stepId: example.plan!.steps[0].id, startTime: 0, endTime: 10, clipName: "tutorial" }],
+    rig: { bodyNode: "TutorBody", handNodes: ["TutorHand_L", "TutorHand_R"] },
+    quality: { approved: true, registeredFrameRatio: 0, medianReprojectionError: 0, measurementErrors: [], notes: ["Illustrated fixture"] }, sanitized: false,
+  };
   const blank: Tutorial = { ...example, id, title: "New tutorial", goal: "", constraints: [], referenceUrls: [], ownerId: "guest-owner", isExample: false, visibility: "private", status: "draft", plan: null, scene: null, job: null, assets: [], measurements: [] };
   const inferred: Tutorial = { ...blank, title: example.title, goal: "Make an espresso with the pod machine on my counter", assets: [asset], plan: { ...example.plan!, questions: [] } };
   const generation = { id: "generate-job", kind: "generate", stage: "ingest", status: "queued", progress: 0, message: "Looking at the counter", budgetUsd: 25, spentUsd: 0 };
@@ -20,8 +29,8 @@ test("one video starts animation generation without login, a typed goal, or any 
   const order: string[] = [];
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, generationMode: "illustrated", services: { database: true, openai: true, worker: true }, user: guest ? { id: "guest-owner", email: "" } : null } }));
-  await page.route("**/api/auth/guest", route => { guest = true; order.push("guest"); return route.fulfill({ json: { user: { id: "guest-owner", email: "" } } }); });
+  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, generationMode: "illustrated", services: { database: true, openai: true, worker: true }, user: guest ? { id: "guest-owner" } : null } }));
+  await page.route("**/api/auth/guest", route => { guest = true; order.push("guest"); return route.fulfill({ json: { user: { id: "guest-owner" } } }); });
   await page.route("**/api/tutorials", route => { submittedGoal = route.request().postDataJSON().goal; order.push("draft"); return route.fulfill({ json: { tutorial: blank } }); });
   await page.route("**/api/uploads?*", route => route.fulfill({ json: { uploads: [] } }));
   await page.route("**/api/uploads", route => { order.push("upload"); return route.fulfill({ json: { uploadId, asset, endpoint, headers: {}, metadata: {}, chunkSize: 6_291_456 } }); });
@@ -31,7 +40,7 @@ test("one video starts animation generation without login, a typed goal, or any 
   await page.route(`**/api/tutorials/${id}/generate`, route => { generationRequests++; order.push("generate"); return route.fulfill({ json: { job: generation } }); });
   await page.route("**/api/jobs/generate-job", route => {
     polls++;
-    return route.fulfill({ json: { job: { ...generation, status: finished ? "completed" : "running", stage: finished ? "ready" : "animate", progress: finished ? 100 : 50 }, tutorial: { ...inferred, status: finished ? "ready" : "generating", scene: finished ? example.scene : null } } });
+    return route.fulfill({ json: { job: { ...generation, status: finished ? "completed" : "running", stage: finished ? "ready" : "animate", progress: finished ? 100 : 50 }, tutorial: { ...inferred, status: finished ? "ready" : "generating", scene: finished ? scene : null } } });
   });
 
   await page.goto("/create");
@@ -63,7 +72,7 @@ test("reloading a running animation restores progress without enqueueing another
   const job: GenerationJob = { id: "88888888-8888-4888-8888-888888888888", tutorialId: id, revision: 1, kind: "generate", status: "running", stage: "animate", progress: 50, message: "Animating the steps from your video", budgetUsd: 25, spentUsd: 1, reservedUsd: 0, createdAt: now, updatedAt: now, error: null };
   const tutorial: Tutorial = { ...example, id, ownerId: "guest-owner", isExample: false, status: "generating", visibility: "private", job, scene: null };
   let newJobs = 0;
-  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, generationMode: "illustrated", services: { database: true, openai: true, worker: true }, user: { id: "guest-owner", email: "" } } }));
+  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, generationMode: "illustrated", services: { database: true, openai: true, worker: true }, user: { id: "guest-owner" } } }));
   await page.route(`**/api/tutorials/${id}`, route => route.fulfill({ json: { tutorial } }));
   await page.route("**/api/uploads?*", route => route.fulfill({ json: { uploads: [] } }));
   await page.route(`**/api/jobs/${job.id}`, route => route.fulfill({ json: { job, tutorial } }));

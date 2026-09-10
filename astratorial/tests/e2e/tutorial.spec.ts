@@ -43,7 +43,7 @@ test("practice handles denied camera access and offers a return route", async ({
 });
 
 test("core routes fit the screen and do not expose connected features without setup", async ({ page }) => {
-  for (const route of ["/", "/library", "/explore", "/create", "/login", "/settings", example, `${example}/practice`]) {
+  for (const route of ["/", "/library", "/explore", "/create", example, `${example}/practice`]) {
     await page.goto(route);
     await expect(page.locator("main")).toBeVisible();
     const dimensions = await page.evaluate(() => ({width:document.documentElement.clientWidth, content:document.documentElement.scrollWidth}));

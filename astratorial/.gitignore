@@ -44,6 +44,7 @@ next-env.d.ts
 
 /test-results/
 /playwright-report/
+/.astratorial/
 worker/.venv/
 __pycache__/
 *.pyc

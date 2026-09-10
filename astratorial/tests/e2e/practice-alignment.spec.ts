@@ -32,7 +32,7 @@ test("fits a fixed camera, renders animated GLB ghost hands, and keeps completio
       return stream;
     }});
   });
-  await page.route("**/api/config",r=>r.fulfill({json:{configured:true,services:{database:true,openai:true,worker:true},user:{id:"fixture-owner",email:"test@example.com"}}}));
+  await page.route("**/api/config",r=>r.fulfill({json:{configured:true,services:{database:true,openai:true,worker:true},user:{id:"fixture-owner"}}}));
   await page.route(`**/api/tutorials/${id}`,r=>r.fulfill({json:{tutorial}}));
   await page.route("**/practice-fixture.glb",r=>r.fulfill({path:path.join(process.cwd(),"tests/fixtures/animated-scene.glb"),contentType:"model/gltf-binary"}));
   await page.route("**/api/practice",r=>r.fulfill({json:{session}}));

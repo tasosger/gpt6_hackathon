@@ -25,7 +25,7 @@ test("resumes an interrupted capture after reload with the same ticket and a ren
   const configuration = () => ({ uploadId, asset, endpoint, headers: { "x-signature": renewals ? "renewed-token" : "initial-token" }, metadata: { bucketName: "captures", objectName: asset.path, contentType: asset.mimeType }, chunkSize: savedOffset });
   const job = { id: "upload-resume-job", kind: "generate", stage: "ingest", status: "queued", progress: 0, message: "Fixture generation queued" };
 
-  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, generationMode: "illustrated", services: { database: true, openai: true, worker: true }, user: { id: "fixture-owner", email: "test@example.com" } } }));
+  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, generationMode: "illustrated", services: { database: true, openai: true, worker: true }, user: { id: "fixture-owner" } } }));
   await page.route(`**/api/tutorials/${id}`, route => route.fulfill({ json: { tutorial: completed ? { ...tutorial, assets: [asset] } : tutorial } }));
   await page.route("**/api/uploads?*", route => route.fulfill({ json: { uploads: ticket ? [ticket] : [] } }));
   await page.route("**/api/uploads", route => {

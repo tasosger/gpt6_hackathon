@@ -5,9 +5,15 @@ import { randomUUID } from "node:crypto";
 import { chromium } from "@playwright/test";
 import { build } from "esbuild";
 import type { SceneManifest } from "../contracts";
+import { LocalFailure, rendererFailure } from "./failures";
 
 /** Trusted renderer: only the exported GLB is loaded; no generated code executes. */
 export async function renderIllustration(glbPath:string,manifest:SceneManifest,directory:string,recordVideo:boolean) {
+  try { return await renderLocalScene(glbPath,manifest,directory,recordVideo); }
+  catch(error) { throw rendererFailure(error); }
+}
+
+async function renderLocalScene(glbPath:string,manifest:SceneManifest,directory:string,recordVideo:boolean) {
   const browserScript=await build({stdin:{contents:`
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -30,7 +36,7 @@ export async function renderIllustration(glbPath:string,manifest:SceneManifest,d
       recorder.stop();stream.getTracks().forEach(track=>track.stop());return result;
     };
     window.sceneReady=true;
-  `,resolveDir:process.cwd(),loader:"js"},bundle:true,format:"esm",platform:"browser",write:false,minify:true});
+  `,resolveDir:process.cwd(),loader:"js"},bundle:true,format:"esm",platform:"browser",write:false,minify:true,logLevel:"silent"});
   const token=randomUUID();const script=browserScript.outputFiles[0].contents;const glb=await readFile(glbPath);
   const server=createServer((request,response)=>{
     const path=request.url||"";
@@ -39,23 +45,27 @@ export async function renderIllustration(glbPath:string,manifest:SceneManifest,d
     else if(path===`/${token}/scene.glb`){response.setHeader("Content-Type","model/gltf-binary");response.end(glb);}
     else{response.statusCode=404;response.end();}
   });
-  await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+  await new Promise<void>((resolve,reject)=>{server.once("error",reject);server.listen(0,"127.0.0.1",resolve);});
   const address=server.address();if(!address||typeof address==="string")throw new Error("Local renderer could not start.");
   const origin=`http://127.0.0.1:${address.port}`;
   const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}),args:["--disable-background-timer-throttling","--disable-renderer-backgrounding"]}).catch(error=>{server.close();throw error;});
   try {
     const page=await browser.newPage({viewport:{width:960,height:720}});
-    const errors:string[]=[];page.on("pageerror",error=>errors.push(error.message));
-    await page.route("**/*",route=>route.request().url().startsWith(origin)?route.continue():route.abort());
-    await page.goto(`${origin}/${token}/`);await page.waitForFunction("window.sceneReady === true",{},{timeout:30_000});
-    if(errors.length)throw new Error("The exported scene failed its browser render check.");
+    // Surface WebGL/GLB load failures immediately instead of hiding their cause
+    // behind a 30-second readiness timeout. Only an allowlisted message escapes.
+    const failed=new Promise<never>((_resolve,reject)=>{
+      page.once("pageerror",error=>reject(rendererFailure(error)));
+      page.once("crash",()=>reject(new LocalFailure("renderer_crashed","The 3D preview browser ran out of resources. Close other busy apps and retry. Your animation and narration are saved.")));
+    });
+    await page.route("**/*",route=>new URL(route.request().url()).origin===origin?route.continue():route.abort());
+    await Promise.race([failed,(async()=>{await page.goto(`${origin}/${token}/`);await page.waitForFunction("window.sceneReady === true",{},{timeout:30_000});})()]);
     const poster=join(directory,"poster.jpg");await page.screenshot({path:poster,type:"jpeg",quality:85});
     let video:string|undefined;
     if(recordVideo) {
-      if(manifest.durationSeconds>600)throw new Error("Split videos longer than ten minutes into shorter tutorials.");
-      const encoded=await page.evaluate(async(duration)=>await (window as unknown as {recordTutorial:(d:number)=>Promise<string>}).recordTutorial(duration),manifest.durationSeconds);
+      if(manifest.durationSeconds>600)throw new LocalFailure("video_too_long","This tutorial is longer than the ten-minute video export limit. Create a shorter tutorial to download it as a video.");
+      const encoded=await Promise.race([failed,page.evaluate(async(duration)=>await (window as unknown as {recordTutorial:(d:number)=>Promise<string>}).recordTutorial(duration),manifest.durationSeconds)]);
       video=join(directory,"recorded.webm");await writeFile(video,Buffer.from(encoded,"base64"));
     }
     return {poster,video};
-  } finally {await browser.close();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+  } finally {await browser.close().catch(()=>undefined);server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
 }

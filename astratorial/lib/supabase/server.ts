@@ -15,5 +15,5 @@ export function supabaseAdmin() {
   requireDatabase();
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } });
 }
-export async function currentUser() { const client = await supabaseServer(); const { data: { user }, error } = await client.auth.getUser(); if (error) return null; return user; }
-export async function requireUser() { const user = await currentUser(); if (!user) fail(401, "Sign in to save and create your tutorials.", "sign_in_required"); return user; }
+export async function currentUser() { const client = await supabaseServer(); const { data: { user }, error } = await client.auth.getUser(); if (error || !user) return null; return { id: user.id }; }
+export async function requireUser() { const user = await currentUser(); if (!user) fail(401, "Your guest session is unavailable. Refresh and try again.", "guest_session_required"); return user; }

@@ -15,7 +15,7 @@ test("loads an animated GLB, keeps camera controls live, and reviews publication
   }};
   tutorial.scene.steps[0].stepId=tutorial.plan!.steps[0].id;
   const errors: string[]=[]; page.on("pageerror", e=>errors.push(e.message));
-  await page.route("**/api/config", route=>route.fulfill({json:{configured:true,services:{database:true,openai:true,worker:true},user:{id:"owner-test",email:"test@example.com"}}}));
+  await page.route("**/api/config", route=>route.fulfill({json:{configured:true,services:{database:true,openai:true,worker:true},user:{id:"owner-test"}}}));
   await page.route(`**/api/tutorials/${id}`, route=>route.fulfill({json:{tutorial}}));
   await page.route(`**/api/tutorials/${id}/publish`, route=>route.fulfill({json:{preview:{...tutorial,goal:"Public goal for review",scene:{...tutorial.scene,sanitized:true,assets:[{kind:"sanitized_scene",path:"test/public.glb",url:"/fixture-scene.glb"}]}},requiresConfirmation:true}}));
   await page.route("**/fixture-*.glb", route=>route.fulfill({path:path.join(process.cwd(),"tests/fixtures/animated-scene.glb"),contentType:"model/gltf-binary"}));

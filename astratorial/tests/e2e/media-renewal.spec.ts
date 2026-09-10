@@ -34,7 +34,7 @@ test("renews media after four minutes without downloading the loaded scene or lo
   audio.writeUInt32LE(16, 16); audio.writeUInt16LE(1, 20); audio.writeUInt16LE(1, 22);
   audio.writeUInt32LE(8_000, 24); audio.writeUInt32LE(16_000, 28); audio.writeUInt16LE(2, 32); audio.writeUInt16LE(16, 34);
   audio.write("data", 36); audio.writeUInt32LE(audio.length - 44, 40);
-  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, services: { database: true, openai: true, worker: true }, user: { id: "fixture-owner", email: "test@example.com" } } }));
+  await page.route("**/api/config", route => route.fulfill({ json: { configured: true, services: { database: true, openai: true, worker: true }, user: { id: "fixture-owner" } } }));
   await page.route(`**/api/tutorials/${id}`, route => {
     reads++;
     return denied ? route.fulfill({ status: 403, json: { error: "Tutorial access ended" } }) : route.fulfill({ json: { tutorial: tutorial() } });
