@@ -10,6 +10,8 @@ Personal tutorials built around your room, tools, and goal. The app uses Next.js
 
 The spoken goal takes priority over other plausible tasks in the scene. Astra uses visible or mentioned tools and ingredients, makes reasonable everyday assumptions, and omits optional extras. If processing fails, retry the saved job within its existing allowance; reloading the page restores progress.
 
+In **Record a video**, use **Flip camera** to switch between the front and rear camera before or during a clip. The microphone and recording timer continue during a switch. If another camera cannot open, the recorder tries to restore the previous camera and explains the problem. Browsers without continuous camera-switching support can still flip before recording.
+
 After selecting a video, the page shows connection, upload and processing progress immediately. Failed transfers retain the selected file and offer a resumable retry. A stopped worker is identified separately from a storage or AI error. See [upload feedback and recovery](docs/upload-feedback.md).
 
 Astra produces validated scene data, and Three.js turns it into an animated GLB with a generic instructor, objects and hand gestures. The same scene supports narrated video export. This is an **illustrated tutorial informed by the video**, with approximate object placement and manual guide alignment. It does not reconstruct measured surfaces or a photorealistic replica. No additional agent SDK, GPU worker or paid hosting service is required.
