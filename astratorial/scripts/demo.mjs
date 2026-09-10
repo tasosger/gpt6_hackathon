@@ -38,7 +38,6 @@ for (const candidate of [port, 8766]) {
 }
 const env = {
   ...process.env,
-  ASTRATORIAL_LOCAL_WORKER: '1',
   LOCAL_VOICE_URL: 'http://127.0.0.1:8766/voice',
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || `http://localhost:${port}`,
 };

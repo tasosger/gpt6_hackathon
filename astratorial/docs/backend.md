@@ -1,32 +1,26 @@
 # Backend setup and verification
 
-See [the Supabase backend guide](../supabase/README.md) for the authentication model, RPC protocol, spending controls, publication boundaries, and a staging verification checklist.
+Supabase is required for guest authentication, private media, saved tutorials, durable jobs and authoritative progress. The website, renderer and voice supervisor run locally; there is no additional worker hosting account to configure. See [the Supabase backend guide](../supabase/README.md) for RPCs, spending controls and publication boundaries.
 
-From the `astratorial` app directory:
+From the `astratorial` directory, copy `.env.example` to the ignored `.env.local`. In the Supabase browser dashboard, create a Free project and use its SQL editor to apply `202609100001_astratorial.sql` and `202609100002_free_hackathon.sql` from `supabase/migrations`, in that order. Fill in `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` and the server-only `OPENAI_API_KEY`.
 
-```sh
-cp .env.example .env.local
-supabase login
-supabase link --project-ref YOUR_PROJECT_REFERENCE
-supabase db push
-npm run test:database
-```
+Enable **Authentication → Sign In / Providers → Allow anonymous sign-ins**, then **Save changes**. Each upload-first guest receives a distinct owner ID and the same row-level isolation as an email user. Set the Auth Site URL to `http://localhost:4173` for the local demo. Optional email OTP needs a template displaying `{{ .Token }}`; the guest flow does not depend on email delivery.
 
-Fill `.env.local` with `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and a replacement server-only `OPENAI_API_KEY`. For the cloud reconstruction pipeline, configure `MODAL_WORKER_URL` as the deployed `/wake` URL, `MODAL_VOICE_URL` as its `/voice` URL, and `MODAL_WORKER_TOKEN` to match the Modal secret. Configure that worker separately using [the pipeline guide](pipeline.md), including verified numerical price ceilings. Production requires the same environment values in Vercel and HTTPS URLs. The free hackathon configuration caps Supabase's global and both private bucket limits at 50 MB. Anonymous sign-ins should be enabled for an upload-first guest session; each guest receives a distinct owner ID and the same RLS isolation.
+Set `LOCAL_VOICE_URL=http://127.0.0.1:8766/voice` and a long random `LOCAL_WORKER_TOKEN`. After installing the dependencies in [the README](../README.md), run `npm run build` and `npm run demo`, or `npm run phone` for a temporary HTTPS phone link. The worker polls Supabase directly; the voice supervisor is reachable only over loopback. Public browser configuration never includes service-role, OpenAI or worker secrets.
 
-Supabase Auth's email template must display `{{ .Token }}` for the six-digit code UI; set the Auth Site URL to the deployed app. Supabase enforces its email OTP rate limits. The API additionally rejects cross-origin mutations, validates request sizes, checks every owner, and keeps all canonical writes service-only.
+Source uploads reserve at most **50 MB/file, 30 files and 200 MB/tutorial, 500 MB/account and 500 MB/project**. PDF manuals together must fit within **10 MB/tutorial**. These use decimal bytes. SQL serializes reservations across the project, including parallel uploads by different guests. Each pending upload reserves the full 50 MB bucket ceiling because signed tokens cannot constrain declared content length. On completion the server verifies actual size and settles the reservation down. Abandoned reservations remain counted until tutorial deletion. Generated assets and bandwidth use additional quota; source limits are not a total storage invoice cap.
 
-Source uploads reserve at most **50 MB/file, 30 files and 200 MB/tutorial, 500 MB/account and 500 MB/project**. PDF manuals together must fit within **10 MB/tutorial**. These use decimal bytes. SQL serializes reservations across the project, including parallel uploads by different guests. Each pending upload reserves the full 50 MB storage-bucket ceiling because signed tokens cannot constrain declared content length. On completion the server verifies the actual object size and settles down to that size. Abandoned reservations remain counted until the tutorial is deleted; this prevents expired-upload retries from exceeding the cap. These are source-file limits, not an overall cloud invoice cap. Derived assets and bandwidth still require monitoring; a large detailed reconstruction may not fit the Free plan even when its source captures do.
+Generation has a $25 allowance per revision. Retries retain that ledger. Camera checks have a separate $2 session allowance with conservative $0.15 reservations, including uncertain failures. Hidden-state checks require human confirmation and use no model. Voice and Astra expert questions share $2 and ten minutes; expert questions reserve $0.35 each. **OpenAI remains a paid API even with local hosting and a free database.**
 
-Generation has a $25 allowance per revision. Retries and resumptions retain that revision's ledger. Live camera checking has a $2 session allowance; bounded visual checks reserve $0.15 each and uncertain failures retain the reservation. Hidden-state checks are free and require human confirmation. Voice and source-grounded Astra expert questions share a separate $2 / ten-minute session limit. Expert questions conservatively reserve $0.35 each. Model and cloud price ceilings must be reviewed before deployment.
+## API boundaries
 
-API examples and limits:
-
-- `GET /api/config` exposes service readiness and the current user, never credentials. Missing services return actionable `503` for dependent actions; there is no fake signed-in backend.
-- `GET /api/uploads?tutorialId=...` lists owned pending tickets in the current revision. `POST /api/uploads/[uploadId]/renew` refreshes that same path’s upload signature without creating a second reservation. Reselect the same fingerprinted file to resume its TUS offset; if the full file already arrived, renewal returns `{completed:true,tutorial,asset,uploadId}`.
-- `POST /api/tutorials/[id]/publish` prepares a sanitized publishing job or returns `{preview: Tutorial, requiresConfirmation: true}`. It returns a full tutorial, not only a scene manifest. `POST {confirm:true}` publishes the reviewed copy.
-- `POST /api/tutorials/[publicId]/adapt` creates a private draft with public procedural context and references. It copies no original room assets, geometry, or measurements.
+- `GET /api/config` exposes service readiness and the current user, never credentials. Missing settings return actionable `503` responses for dependent actions.
+- `GET /api/uploads?tutorialId=...` lists owned pending tickets. `POST /api/uploads/[uploadId]/renew` refreshes the same upload path without another reservation. Reselect the same fingerprinted file to resume its TUS offset; a completed file can be attached idempotently during renewal.
+- `POST /api/tutorials/[id]/publish` prepares a public-copy job or returns `{preview: Tutorial, requiresConfirmation: true}`. `POST {confirm:true}` publishes the reviewed illustration.
+- `POST /api/tutorials/[publicId]/adapt` creates a private draft with published procedural context and references, excluding original captures and private scene data.
 - `POST /api/realtime/session/[id]/context` accepts `{stepId,cameraMode}`. `GET` returns current `{stepId,cameraMode,action,version,status,budgetUsd,spentUsd}`; apply each increasing action version once.
-- `GET /api/practice/[id]` returns `{session}` for authoritative voice-driven pause/repeat/navigation. Visual checks and manual actions use optimistic session versions; stale checks cannot advance progress.
+- `GET /api/practice/[id]` returns authoritative progress. Visual checks and manual actions use optimistic versions; stale checks cannot advance a step.
 
-Local checks do not prove live cloud provisioning, real room reconstruction, avatar realism, mobile frame rate, or actual provider billing. Run the staging checklist with real espresso, cooking, and assembly captures before accepting those production criteria. Enable project-level spend/storage alerts and appropriate Supabase authentication abuse controls for a public signup launch; the app does not implement end-user subscriptions or payment collection.
+The server checks ownership, validates request sizes, rejects unauthorized mutation origins and keeps canonical writes service-only. A running local voice supervisor maintains active call deadlines and expires temporary practice frames; stopping the computer interrupts that supervision.
+
+Run `npm run test:database` for disposable local PostgreSQL checks; it never targets the configured project. Then test the actual browser → Storage → queue → worker flow and two-account isolation against your Supabase project. See [the verification record](verification.md) for the latest connected-test status. Unit tests do not establish physical-phone performance, illustration usefulness or actual provider invoices.

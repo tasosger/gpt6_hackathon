@@ -19,8 +19,6 @@ from astratorial.store import Store
 from astratorial.voice import hangup, supervise
 
 DEFAULT_RATES = {
-    'input_million': 10, 'output_million': 50, 'search_call': .01,
-    'cpu_second': .0006, 'gpu_second': .0012, 'tts_character': .001,
     'voice_input_million': 32, 'voice_output_million': 64,
     'voice_text_input_million': 4, 'voice_text_output_million': 24,
 }
@@ -41,7 +39,7 @@ def local_config():
                   required('SUPABASE_SERVICE_ROLE_KEY'), required('OPENAI_API_KEY'),
                   os.environ.get('OPENAI_MODEL', 'gpt-6-astra'), rates,
                   required('NEXT_PUBLIC_APP_URL', 'APP_BASE_URL').rstrip('/'),
-                  required('LOCAL_WORKER_TOKEN', 'MODAL_WORKER_TOKEN'))
+                  required('LOCAL_WORKER_TOKEN'))
 
 
 class VoiceInput(BaseModel):

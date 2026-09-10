@@ -2,10 +2,8 @@
 import json
 from pathlib import Path
 import shutil
-import sys
 import numpy as np
 import open3d as o3d
-sys.path.insert(0, '/opt/worker')
 from astratorial.textured_ply import read_textured_ply, write_textured_ply
 from astratorial.segmentation import angular_coverage
 from surface_union import novel_triangles

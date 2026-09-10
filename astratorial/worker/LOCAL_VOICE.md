@@ -1,6 +1,6 @@
 # Voice on your computer
 
-The local demo can run the conversational instructor without a Modal account. This small server only supervises voice sessions. It reuses the cloud worker's Realtime guard, shares the persisted **$2 or ten-minute** session allowance, and never executes scene-generation scripts.
+The conversational instructor runs on your computer. This small server supervises Realtime voice sessions, enforces the persisted **$2 or ten-minute** session allowance, and never executes scene-generation scripts.
 
 From the `astratorial` directory:
 
@@ -23,7 +23,7 @@ LOCAL_VOICE_URL=http://127.0.0.1:8766/voice
 
 `NEXT_PUBLIC_APP_URL` must be reachable from this process and point to the running Next.js server. For a phone demo, the browser needs HTTPS to grant microphone and camera access; the voice supervisor can still call the local app at the loopback URL. Run one voice process with one Uvicorn worker. No cloud hosting payment is required for this process, but actual OpenAI usage still uses the configured API account.
 
-The app does not release its WebRTC answer until supervision is attached. An independent timer ends a session at its persisted expiration even if its conversation stalls. Graceful shutdown hangs up current calls. The process checks the database every five seconds to terminate expired calls and reattach active calls after a restart. If the computer is shut down or loses its network, the local process cannot enforce a remote deadline until it comes back; keep the computer awake for the demo. Use the separate Modal watchdog for a deployment that must survive loss of this computer.
+The app does not release its WebRTC answer until supervision is attached. An independent timer ends a session at its persisted expiration even if its conversation stalls. Graceful shutdown hangs up current calls. The process checks the database every five seconds to terminate expired calls and reattach active calls after a restart. If the computer is shut down or loses its network, the local process cannot enforce a remote deadline until it comes back; keep the computer awake for the demo.
 
 The default conservative pricing ledger matches the documented worker ceilings. `WORKER_PRICE_CEILINGS_JSON` can increase these ceilings, but this local runner refuses values below the checked-in defaults.
 

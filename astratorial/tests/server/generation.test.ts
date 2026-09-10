@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleApi } from "../../lib/server/api";
-import { ownedTutorial, newTutorial, createTutorialSchema, wakeWorker } from "../../lib/server/tutorials";
+import { ownedTutorial, newTutorial, createTutorialSchema } from "../../lib/server/tutorials";
 import { requireUser } from "../../lib/supabase/server";
 import { AppError } from "../../lib/server/errors";
 import type { GenerationJob, TutorialPlan } from "../../lib/contracts";
 
 const mocks=vi.hoisted(()=>({rpc:vi.fn()}));
 vi.mock("../../lib/supabase/server",()=>({requireUser:vi.fn(),currentUser:vi.fn(),supabaseServer:vi.fn(),supabaseAdmin:()=>({rpc:mocks.rpc})}));
-vi.mock("../../lib/server/tutorials",async(importOriginal)=>({...await importOriginal<typeof import("../../lib/server/tutorials")>(),ownedTutorial:vi.fn(),wakeWorker:vi.fn()}));
+vi.mock("../../lib/server/tutorials",async(importOriginal)=>({...await importOriginal<typeof import("../../lib/server/tutorials")>(),ownedTutorial:vi.fn()}));
 
 const ownerId="10000000-0000-4000-8000-000000000001";
 const tutorialId="10000000-0000-4000-8000-000000000002";
@@ -19,20 +19,18 @@ function generate(){return handleApi(new Request(`http://localhost:3000/api/tuto
 
 beforeEach(()=>{
   vi.clearAllMocks();
-  vi.stubEnv("OPENAI_API_KEY","test-key");vi.stubEnv("ASTRATORIAL_LOCAL_WORKER","1");
-  vi.stubEnv("MODAL_WORKER_URL","https://worker.example/wake");vi.stubEnv("MODAL_WORKER_TOKEN","test-token");
+  vi.stubEnv("OPENAI_API_KEY","test-key");
   vi.mocked(requireUser).mockResolvedValue({id:ownerId} as Awaited<ReturnType<typeof requireUser>>);
   vi.mocked(ownedTutorial).mockResolvedValue(draft());mocks.rpc.mockResolvedValue({data:job,error:null});
 });
 afterEach(()=>vi.unstubAllEnvs());
 
 describe("automatic illustrated generation endpoint",()=>{
-  it("queues one generate job from a video with no goal, plan, or measurements",async()=>{
+  it("queues a local job without an extra worker setting, goal, plan, or measurements",async()=>{
     const response=await generate();
     expect(response.status).toBe(202);expect(await response.json()).toEqual({job});
     expect(ownedTutorial).toHaveBeenCalledWith(tutorialId,ownerId);
     expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("enqueue_job",{p_tutorial_id:tutorialId,p_owner_id:ownerId,p_kind:"generate"});
-    expect(wakeWorker).toHaveBeenCalledExactlyOnceWith(job.id);
   });
 
   it("does not gate illustrated generation on questions in an older plan",async()=>{
@@ -50,13 +48,5 @@ describe("automatic illustrated generation endpoint",()=>{
     expect((await generate()).status).toBe(401);expect(mocks.rpc).not.toHaveBeenCalled();
     vi.mocked(ownedTutorial).mockRejectedValueOnce(new AppError(404,"This tutorial is unavailable."));
     expect((await generate()).status).toBe(404);expect(mocks.rpc).not.toHaveBeenCalled();
-  });
-
-  it("keeps plan and measurement prerequisites for measured generation",async()=>{
-    vi.stubEnv("ASTRATORIAL_LOCAL_WORKER","");
-    expect((await generate()).status).toBe(422);
-    vi.mocked(ownedTutorial).mockResolvedValue({...draft(),plan});
-    const response=await generate();expect(response.status).toBe(422);expect(await response.json()).toMatchObject({code:"measurements_required"});
-    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 });

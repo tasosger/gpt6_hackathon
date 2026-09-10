@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { CaptureAssetSchema, GenerationJobSchema, PracticeSessionSchema, TutorialSchema, type AppConfig, type Tutorial } from "@/lib/contracts";
 import { currentUser, requireUser, supabaseAdmin, supabaseServer } from "@/lib/supabase/server";
-import { services, requireAI, requireWorker, localMode } from "./env";
+import { services, requireAI } from "./env";
 import { api, body, dbError, fail, assertRequestOrigin } from "./errors";
-import { createTutorialSchema, hydrateTutorial, newTutorial, ownedTutorial, publicSnapshot, readableTutorial, updateTutorialSchema, wakeWorker } from "./tutorials";
+import { createTutorialSchema, hydrateTutorial, newTutorial, ownedTutorial, publicSnapshot, readableTutorial, updateTutorialSchema } from "./tutorials";
 import { actionSchema, applyPracticeAction, applyStepCheck, unconfirmedMovableObjects } from "./practice";
 import { checkStep, askExpert } from "./openai";
 import { endVoice, requireWorkerToken, startVoice, voiceInput } from "./voice";
@@ -20,7 +20,7 @@ export const handleApi = api(async (request:Request) => {
   const parts=url.pathname.replace(/^\/api\//,"").split("/").filter(Boolean); const method=request.method;
   if (parts[0]==="config" && method==="GET") {
     const status=services(); const user=status.database ? await currentUser() : null;
-    const config:AppConfig={generationMode:localMode()?"illustrated":"measured",configured:status.database&&status.openai&&status.worker,services:status,user:user?{id:user.id,email:user.email||""}:null};return json(config);
+    const config:AppConfig={generationMode:"illustrated",configured:status.database&&status.openai&&status.worker,services:status,user:user?{id:user.id,email:user.email||""}:null};return json(config);
   }
   if(parts[0]==="auth") return authRoute(request,parts[1]);
   if(parts[0]==="internal"&&parts[1]==="voice") return internalVoiceRoute(request,uuid.parse(parts[2]),parts[3]);
@@ -46,16 +46,10 @@ export const handleApi = api(async (request:Request) => {
       const result=await supabaseAdmin().storage.from("captures").createSignedUrl(asset.path,300);dbError(result.error);return json({url:result.data!.signedUrl});
     }
     if(["analyze","generate","export"].includes(parts[2])&&method==="POST") {
-      const user=await requireUser(); requireAI();requireWorker(); const tutorial=await ownedTutorial(id,user.id);
+      const user=await requireUser(); requireAI(); const tutorial=await ownedTutorial(id,user.id);
       if(!tutorial.assets.some(a=>a.kind==="video"||a.kind==="image"))fail(422,"Add a room video or photos before generating your tutorial.");
-      if(parts[2]==="generate"&&!localMode()) {
-        if(!tutorial.plan)fail(422,"Analyze your capture and confirm the goal before generating.");
-        if(tutorial.plan.questions.some(q=>q.required))fail(422,"Answer the required capture questions and analyze again first.","context_required");
-        const triangulatable=(m:Tutorial["measurements"][number])=>new Set(m.observations.map(o=>`${o.assetId}:${o.timestamp}`)).size>=2;
-        if(!tutorial.measurements.some(m=>m.purpose==="scale"&&triangulatable(m))||!tutorial.measurements.some(m=>m.purpose==="validation"&&triangulatable(m)))fail(422,"Add a scale measurement and an independent validation measurement, each marked in two different camera views.","measurements_required");
-      }
       if(parts[2]==="export"&&!tutorial.scene)fail(409,"Generate the scene before exporting a video.");
-      const {data,error}=await supabaseAdmin().rpc("enqueue_job",{p_tutorial_id:id,p_owner_id:user.id,p_kind:parts[2]});dbError(error);const job=GenerationJobSchema.parse(data);await wakeWorker(job.id);return json({job},202);
+      const {data,error}=await supabaseAdmin().rpc("enqueue_job",{p_tutorial_id:id,p_owner_id:user.id,p_kind:parts[2]});dbError(error);const job=GenerationJobSchema.parse(data);return json({job},202);
     }
     if(parts[2]==="adapt"&&method==="POST")return adaptTutorial(id);
     if(parts[2]==="publish"&&method==="POST")return publishTutorial(request,id);
@@ -69,7 +63,7 @@ export const handleApi = api(async (request:Request) => {
   if(parts[0]==="jobs") {
     const user=await requireUser();const id=uuid.parse(parts[1]);const db=supabaseAdmin();const {data:row,error}=await db.from("generation_jobs").select("id,tutorial_id").eq("id",id).eq("owner_id",user.id).maybeSingle();dbError(error);if(!row)fail(404,"This generation job is unavailable.");
     if(method==="GET") {const result=await db.rpc("job_json",{p_id:id});dbError(result.error);return json({job:GenerationJobSchema.parse(result.data),tutorial:await hydrateTutorial(await ownedTutorial(row.tutorial_id,user.id))});}
-    if(method==="POST"&&["cancel","resume"].includes(parts[2])) {if(parts[2]==="resume"){requireAI();requireWorker();}const result=await db.rpc("control_job",{p_id:id,p_owner_id:user.id,p_action:parts[2]});dbError(result.error);const job=GenerationJobSchema.parse(result.data);if(parts[2]==="resume")await wakeWorker(job.id);return json({job});}
+    if(method==="POST"&&["cancel","resume"].includes(parts[2])) {if(parts[2]==="resume"){requireAI();}const result=await db.rpc("control_job",{p_id:id,p_owner_id:user.id,p_action:parts[2]});dbError(result.error);const job=GenerationJobSchema.parse(result.data);return json({job});}
   }
   if(parts[0]==="practice")return practiceRoute(request,parts);
   if(parts[0]==="realtime"&&parts[1]==="session") {
@@ -166,7 +160,7 @@ async function publishTutorial(request:Request,id:string) {
     if(!input.confirm)return json({preview:await hydrateTutorial(snapshot,false),requiresConfirmation:true});
     const updated={...tutorial,visibility:"public" as const,updatedAt:new Date().toISOString()};const result=await db.from("tutorials").update({visibility:"public",public_data:snapshot,data:updated,updated_at:updated.updatedAt}).eq("id",id).eq("owner_id",user.id).eq("data->>revision",String(tutorial.revision)).select("id").maybeSingle();dbError(result.error);if(!result.data)fail(409,"This tutorial changed before it could be published.");return json({tutorial:await hydrateTutorial(updated)});
   }
-  requireWorker();requireAI();const result=await db.rpc("enqueue_job",{p_tutorial_id:id,p_owner_id:user.id,p_kind:"publish"});dbError(result.error);const job=GenerationJobSchema.parse(result.data);await wakeWorker(job.id);return json({job,requiresConfirmation:true},202);
+  requireAI();const result=await db.rpc("enqueue_job",{p_tutorial_id:id,p_owner_id:user.id,p_kind:"publish"});dbError(result.error);const job=GenerationJobSchema.parse(result.data);return json({job,requiresConfirmation:true},202);
 }
 
 async function deleteTutorial(id:string) {
