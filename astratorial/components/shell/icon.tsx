@@ -25,4 +25,8 @@ const paths: Record<IconName, ReactNode> = {
   refresh: <path d="M20 8a9 9 0 0 0-15-3L2 8m0-6v6h6M4 16a9 9 0 0 0 15 3l3-3m0 6v-6h-6" />, mail: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></>, stop: <rect x="6" y="6" width="12" height="12" rx="1" />,
 };
 export function Icon({ name, size = 20, className, style }: { name: IconName; size?: number; className?: string; style?: CSSProperties }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className} style={style}>{paths[name]}</svg>; }
-export function BrandMark({ size = 30 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M16 2v28M2 16h28M6 6l20 20M26 6 6 26" stroke="currentColor" strokeWidth="3.5" /><circle cx="16" cy="16" r="5.5" fill="currentColor" /></svg>; }
+export function BrandMark({ size = 40 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 300 324" fill="none" aria-hidden="true">
+    <image href="/logo.svg" width="300" height="324" />
+  </svg>;
+}
