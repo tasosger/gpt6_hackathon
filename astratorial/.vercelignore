@@ -1,0 +1,11 @@
+.env*
+**/.env*
+.next/
+.vercel/
+node_modules/
+worker/.venv/
+**/__pycache__/
+*.tsbuildinfo
+test-results/
+playwright-report/
+supabase/.temp/

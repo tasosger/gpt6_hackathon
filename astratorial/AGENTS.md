@@ -1,3 +1,5 @@
+instead of using supabase cli. use browser.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
