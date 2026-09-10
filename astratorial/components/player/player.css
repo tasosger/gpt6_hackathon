@@ -9,3 +9,23 @@
 @media(max-width:560px){.scene-detail-label{display:none}.scene-toolbar{gap:7px}.camera-stop span{display:none}.share-scene-preview{height:210px}}
 
 .ghost-transform{position:absolute;inset:0;transform-origin:center;pointer-events:none}.guide-drag-layer{position:absolute;z-index:4;cursor:grab;touch-action:none;outline-offset:-3px}.guide-drag-layer:active{cursor:grabbing}.guide-drag-layer:focus-visible{outline:2px solid #f5d4a9}.guide-drag-hint{position:absolute;top:60px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11px;color:#fff9ec;background:#283023b8;border-radius:18px;padding:8px 13px;pointer-events:none}.guide-adjustments{margin:20px 0}.guide-adjustments label{display:flex;flex-direction:column;gap:10px;color:#7e896e;font-size:12px;margin:17px 0}.guide-adjustments input[type=range]{width:100%;accent-color:#c38257}.practice-camera .ghost-layer{overflow:visible}@media(max-width:560px){.guide-drag-hint{top:58px;font-size:10px;padding:7px 10px}.guide-adjustments label{font-size:11px}}
+
+/* Keep the current instruction legible without changing the player controls. */
+.player-page .tutorial-step.current { background:var(--accent-light); color:var(--accent-dark); }
+.player-page .current .step-number,.step-playing-dot,.landmark-dot,.alignment-progress>.done { background:var(--accent); border-color:var(--accent); }
+.player-transport { background:var(--ink); }
+.player-transport input,.practice-options input[type=range],.practice-options input[type=checkbox] { accent-color:var(--accent); }
+.tutor-avatar { background:var(--accent-light); color:var(--accent-dark); }
+.tutorial-heading p,.tutorial-step small,.tutor-conversation p,.ready-card p,.ready-card small,.practice-sidebar p,.practice-heading p,.example-disclosure { color:var(--muted); }
+.tutorial-step { min-height:64px; }
+.tutorial-step strong { font-size:13px; }
+.tutorial-step small { font-size:12px; }
+.step-navigation button { min-height:44px; color:var(--accent-dark); font-size:12px; }
+.scene-detail-button[aria-pressed=true] { background:var(--accent-light); color:var(--accent-dark); }
+.practice-error,.player-inline-error { color:#963d3d!important; }
+.practice-error { background:#fff1f1; border-color:#f2d6d6; }
+@media(max-width:560px) {
+  .tutor-conversation p,.example-disclosure,.practice-camera-caption { font-size:12px; }
+  .player-transport button { min-width:36px; min-height:44px; }
+  .tutorial-heading-actions .button { min-width:44px; }
+}

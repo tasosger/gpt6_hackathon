@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppConfig } from "@/lib/contracts";
 import { api, ConfigContext, errorMessage } from "@/lib/client";
 import { BrandMark, Icon, type IconName } from "./icon";
@@ -12,6 +12,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", dismiss);
+    return () => window.removeEventListener("keydown", dismiss);
+  }, [menuOpen]);
   const refresh = useCallback(async () => { setLoading(true); try { setConfig(await api<AppConfig>("/api/config")); setError(null); } catch (reason) { setError(errorMessage(reason)); } finally { setLoading(false); } }, []);
   useEffect(() => { let active = true; api<AppConfig>("/api/config").then((value) => { if (active) { setConfig(value); setError(null); } }).catch((reason) => { if (active) setError(errorMessage(reason)); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, []);
   const title = pathname.startsWith("/create") ? "Create a tutorial" : pathname.startsWith("/tutorial") ? "Your next little victory" : pathname.startsWith("/practice") ? "Let's try it together" : "A little more possible, every day";
@@ -25,6 +37,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="sidebar-note"><div className="sidebar-note-icon"><Icon name="sparkles" size={21} /></div><strong>Made for your real life.</strong><p>Your space. Your things.<br />A guide that gets it.</p><Link href="/create" onClick={() => setMenuOpen(false)}>See what&apos;s possible <Icon name="arrow" size={14} /></Link></div>
     </aside>
     {menuOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
-    <div className="app-body"><header className="topbar"><div className="topbar-left"><button className="icon-button mobile-menu" aria-label={menuOpen ? "Close navigation" : "Open navigation"} aria-expanded={menuOpen} aria-controls="app-navigation" onClick={() => setMenuOpen(!menuOpen)}><Icon name={menuOpen ? "close" : "menu"} /></button><span className="topbar-symbol"><BrandMark size={16} /></span><span className="topbar-title">{title}</span><Link href="/" className="mobile-brand" aria-label="astratorial home"><BrandMark size={18} /><span>astratorial.</span></Link></div><div className="topbar-right"><span className="powered-by"><span className="status-dot" /> Powered by Astra</span></div></header><main className="app-main" id="main-content">{children}</main><footer className="app-footer"><span>A little guidance goes a long way.</span></footer></div>
+    <div className="app-body"><header className="topbar"><div className="topbar-left"><button ref={menuButtonRef} className="icon-button mobile-menu" aria-label={menuOpen ? "Close navigation" : "Open navigation"} aria-expanded={menuOpen} aria-controls="app-navigation" onClick={() => setMenuOpen(!menuOpen)}><Icon name={menuOpen ? "close" : "menu"} /></button><span className="topbar-symbol"><BrandMark size={16} /></span><span className="topbar-title">{title}</span><Link href="/" className="mobile-brand" aria-label="astratorial home"><BrandMark size={18} /><span>astratorial.</span></Link></div><div className="topbar-right"><span className="powered-by"><span className="status-dot" /> Powered by Astra</span></div></header><main className="app-main" id="main-content">{children}</main><footer className="app-footer"><span>A little guidance goes a long way.</span></footer></div>
   </ConfigContext>;
 }
