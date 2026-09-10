@@ -2,7 +2,7 @@
 
 Version 0.1 • September 10, 2026 • Proposed architecture
 
-Astra is a camera-aware tutor that helps a person complete a physical task through conversation, live observation, and short animated demonstrations. A user says, “Help me make pasta.” Astra establishes the available ingredients and equipment, builds an executable plan, watches for relevant changes, demonstrates the next action, and verifies progress until the agreed outcome is achieved.
+Astra is a camera-aware tutor that helps a person complete a physical task through conversation, live observation, and short animated demonstrations. A user says, “Help me fix this sink.” Astra establishes the available equipment, builds an executable plan, watches for relevant changes, demonstrates the next action, and verifies progress until the agreed outcome is achieved.
 
 The central design decision is to run instruction through an evidence-backed task controller. A multimodal model proposes interpretations and adaptations; a typed runtime decides whether the evidence and prerequisites permit an instruction. This supports useful autonomy without treating a plausible description of a camera frame as proof that an action occurred.
 
