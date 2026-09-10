@@ -4,6 +4,17 @@ export class AppError extends Error {
   constructor(public status: number, message: string, public code = "request_failed") { super(message); }
 }
 export function fail(status: number, message: string, code?: string): never { throw new AppError(status, message, code); }
+export function assertRequestOrigin(request: Request) {
+  const origin = request.headers.get("origin");
+  if (!origin || origin === new URL(request.url).origin) return;
+  // A local HTTPS tunnel terminates at an HTTP loopback server. Trust only its
+  // explicitly configured origin, never caller-supplied forwarding headers.
+  const publicUrl = process.env.ASTRATORIAL_PUBLIC_URL;
+  if (publicUrl) {
+    try { if (origin === new URL(publicUrl).origin) return; } catch { /* Invalid configuration cannot grant access. */ }
+  }
+  fail(403, "This request must come from Astratorial.");
+}
 export function api<T extends unknown[]>(handler: (...args: T) => Promise<Response>) {
   return async (...args: T) => {
     try { return await handler(...args); }
@@ -18,8 +29,7 @@ export function api<T extends unknown[]>(handler: (...args: T) => Promise<Respon
 }
 export async function body(request: Request, maxBytes = 128_000): Promise<unknown> {
   if (Number(request.headers.get("content-length") || 0) > maxBytes) fail(413, "This request is too large.");
-  const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin) fail(403, "This request must come from Astratorial.");
+  assertRequestOrigin(request);
   if (!request.headers.get("content-type")?.includes("application/json")) fail(415, "Send this request as JSON.");
   const reader = request.body?.getReader();
   if (!reader) fail(400, "A request body is required.");

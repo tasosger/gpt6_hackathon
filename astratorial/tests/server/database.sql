@@ -1,5 +1,7 @@
 \set ON_ERROR_STOP on
 insert into auth.users values('00000000-0000-4000-8000-000000000001'),('00000000-0000-4000-8000-000000000002');
+-- Exercise actual server privileges, rather than bypassing them as postgres.
+set role service_role;
 select public.create_tutorial('00000000-0000-4000-8000-000000000001','{"id":"10000000-0000-4000-8000-000000000001","ownerId":"00000000-0000-4000-8000-000000000001","revision":1,"assets":[],"status":"draft"}');
 do $$ declare j jsonb; duplicate jsonb; claimed jsonb; balance numeric; expected boolean; begin
  j:=public.enqueue_job('10000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','analyze');
@@ -17,9 +19,10 @@ do $$ declare j jsonb; duplicate jsonb; claimed jsonb; balance numeric; expected
  perform public.settle_job_cost((j->>'id')::uuid,'worker-a','first-attempt',2);
  select spent_usd into balance from tutorial_budgets where tutorial_id='10000000-0000-4000-8000-000000000001' and revision=1;
  assert balance=2,'cost settlement was not idempotent';
- perform public.checkpoint_job((j->>'id')::uuid,'worker-a','analyze',30,'Evidence saved','{"frames":["a"]}','{"ownerId":"tampered","revision":99,"status":"needs_context"}','needs_context');
+ perform public.checkpoint_job((j->>'id')::uuid,'worker-a','analyze',30,'Evidence saved','{"frames":["a"]}','{"ownerId":"tampered","revision":99,"goal":"Make an espresso from the captured machine","status":"needs_context"}','needs_context');
  assert (select data->>'ownerId' from tutorials limit 1)='00000000-0000-4000-8000-000000000001','worker changed tutorial identity';
  assert (select data->>'revision' from tutorials limit 1)='1','worker changed tutorial revision';
+ assert (select data->>'goal' from tutorials limit 1)='Make an espresso from the captured machine','video analysis could not persist an inferred goal';
  perform public.control_job((j->>'id')::uuid,'00000000-0000-4000-8000-000000000001','resume');
  assert (public.job_json((j->>'id')::uuid)->>'spentUsd')::numeric=2,'resume reset the revision budget';
  assert (select checkpoint->'frames' from generation_jobs where id=(j->>'id')::uuid)='["a"]','resume lost checkpoint';
@@ -32,14 +35,18 @@ do $$ declare j jsonb; duplicate jsonb; claimed jsonb; balance numeric; expected
  assert expected,'cancelled worker could commit';
 end $$;
 do $$ declare expected boolean; asset_id uuid; begin
- for idx in 1..3 loop
+ assert (select bool_and(not public and file_size_limit=50000000) from storage.buckets),'free-tier buckets were not private or exceeded 50 MB';
+ expected:=false;asset_id:=gen_random_uuid();
+ begin perform register_upload(asset_id,'00000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001',1,jsonb_build_object('id',asset_id,'size',50000001,'kind','video','path','00000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000001/r1/'||asset_id));exception when others then expected:=true;end;
+ assert expected,'upload above free-tier 50 MB ceiling was accepted';
+ for idx in 1..4 loop
   asset_id:=gen_random_uuid();
   perform register_upload(asset_id,'00000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001',1,jsonb_build_object('id',asset_id,'size',1,'kind','video','path','00000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000001/r1/'||asset_id));
  end loop;
  expected:=false;asset_id:=gen_random_uuid();
  begin perform register_upload(asset_id,'00000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001',1,jsonb_build_object('id',asset_id,'size',1,'kind','video','path','00000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000001/r1/'||asset_id));exception when others then expected:=true;end;
- assert expected,'source reservation exceeded 2 GB despite a tiny declared size';
- assert (select sum(reserved_bytes) from uploads where tutorial_id='10000000-0000-4000-8000-000000000001')=1800000000,'pending tokens did not reserve their true storage ceiling';
+ assert expected,'source reservation exceeded 200 MB despite a tiny declared size';
+ assert (select sum(reserved_bytes) from uploads where tutorial_id='10000000-0000-4000-8000-000000000001')=200000000,'pending tokens did not reserve their true storage ceiling';
  select id into asset_id from uploads where tutorial_id='10000000-0000-4000-8000-000000000001' limit 1;
  perform complete_upload(asset_id,'00000000-0000-4000-8000-000000000001');
  assert (select reserved_bytes from uploads where id=asset_id)=1,'verified completion did not release excess reservation';
@@ -52,6 +59,23 @@ do $$ declare expected boolean; asset_id uuid; begin
  -- Reserving another small PDF is allowed; multiple manuals are supported.
  asset_id:=gen_random_uuid();
  perform register_upload(asset_id,'00000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001',1,jsonb_build_object('id',asset_id,'size',1000000,'kind','manual','path','00000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000001/r1/'||asset_id));
+end $$;
+do $$ declare expected boolean:=false; asset_id uuid; tutorial_id uuid; owner_id uuid; begin
+ delete from uploads;
+ for idx in 2..4 loop
+  tutorial_id:=('10000000-0000-4000-8000-00000000000'||idx)::uuid;
+  owner_id:=case when idx=4 then '00000000-0000-4000-8000-000000000002'::uuid else '00000000-0000-4000-8000-000000000001'::uuid end;
+  perform create_tutorial(owner_id,jsonb_build_object('id',tutorial_id,'ownerId',owner_id,'revision',1,'assets','[]'::jsonb,'status','draft'));
+  for item in 1..(case when idx=4 then 2 else 4 end) loop
+   asset_id:=gen_random_uuid();
+   perform register_upload(asset_id,owner_id,tutorial_id,1,jsonb_build_object('id',asset_id,'size',1,'kind','video','path',owner_id||'/'||tutorial_id||'/r1/'||asset_id));
+  end loop;
+ end loop;
+ assert (select sum(reserved_bytes) from uploads)=500000000,'project-wide capture reservation ceiling was not reached';
+ asset_id:=gen_random_uuid();
+ begin perform register_upload(asset_id,owner_id,tutorial_id,1,jsonb_build_object('id',asset_id,'size',1,'kind','video','path',owner_id||'/'||tutorial_id||'/r1/'||asset_id)); exception when others then expected:=true; end;
+ assert expected,'a different guest bypassed the project storage reservation cap';
+ delete from tutorials where id<>'10000000-0000-4000-8000-000000000001';
 end $$;
 insert into public.practice_sessions(id,owner_id,tutorial_id,data) values('20000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','{"id":"20000000-0000-4000-8000-000000000001","ownerId":"00000000-0000-4000-8000-000000000001","tutorialRevision":1,"version":0,"status":"active"}');
 do $$ declare expected boolean; begin

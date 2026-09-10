@@ -56,14 +56,12 @@ test("resumes an interrupted capture after reload with the same ticket and a ren
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }, size);
   await page.goto(`/create?id=${id}`);
-  await expect(page.getByRole("button", { name: "Get to know my space", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Upload a video or photos", exact: true })).toBeVisible();
   await reselect();
-  await page.getByRole("button", { name: "Get to know my space", exact: true }).click();
   await expect.poll(() => interrupted).toBe(true);
   await page.reload();
   await expect(page.getByText("Continue an interrupted upload.", { exact: true })).toBeVisible();
   await reselect();
-  await page.getByRole("button", { name: "Get to know my space", exact: true }).click();
   await expect.poll(() => analysisStarted).toBe(true);
   expect(completed).toBe(true);
   expect(creations).toBe(1);

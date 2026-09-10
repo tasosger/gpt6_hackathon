@@ -3,6 +3,8 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
+  // Keep software-rendered 3D scenes responsive on the local demo machine.
+  workers: 2,
   timeout: 40_000,
   expect: { timeout: 10_000 },
   reporter: [["list"]],

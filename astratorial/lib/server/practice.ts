@@ -4,7 +4,7 @@ import { fail } from "./errors";
 import { calibrateCamera } from "@/lib/calibration";
 
 export const actionSchema = z.object({
-  action: z.enum(["calibrate", "confirm", "next", "previous", "repeat", "pause", "resume", "invalidate", "anchor"]),
+  action: z.enum(["start_illustrated", "calibrate", "confirm", "next", "previous", "repeat", "pause", "resume", "invalidate", "anchor"]),
   version: z.number().int().nonnegative(),
   calibration: z.record(z.string(), z.unknown()).optional(),
   objectId: z.string().optional(), position: z.tuple([z.number().finite(),z.number().finite(),z.number().finite()]).optional(),
@@ -39,7 +39,10 @@ function advance(session: PracticeSession, tutorial: Tutorial): PracticeSession 
 export function applyPracticeAction(session: PracticeSession, tutorial: Tutorial, input: PracticeAction): PracticeSession {
   requireCurrent(session, tutorial, input.version);
   let next = { ...session, consecutiveComplete: 0 };
-  if (input.action === "calibrate") {
+  if (input.action === "start_illustrated") {
+    if(tutorial.scene?.mode!=="illustrated")fail(422,"This tutorial needs measured camera alignment.");
+    next={...next,calibration:{mode:"illustrated"},status:"active"};
+  } else if (input.action === "calibrate") {
     next = { ...next, calibration: canonicalCalibration(tutorial,input.calibration), status: "active" };
   } else if (input.action === "invalidate") next = { ...next, calibration: null, status: "calibrating" };
   else if (input.action === "pause") { if (next.status !== "completed") next.status = "paused"; }
@@ -65,6 +68,7 @@ export function applyPracticeAction(session: PracticeSession, tutorial: Tutorial
   return { ...next, version: session.version + 1, updatedAt: new Date().toISOString() };
 }
 export function unconfirmedMovableObjects(session: PracticeSession,tutorial: Tutorial): string[] {
+  if(tutorial.scene?.mode==="illustrated")return [];
   const step=tutorial.plan?.steps[session.currentStepIndex];
   if(!step)return [];
   const anchors=(session.calibration?.objectAnchors||{}) as Record<string,{stepId?:string}>;

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { GenerationJobSchema, MeasurementSchema, SceneManifestSchema, TutorialSchema, slugify, type Tutorial, type SceneManifest, type TutorialPlan } from "@/lib/contracts";
 import { currentUser, supabaseAdmin } from "@/lib/supabase/server";
+import { localMode } from "./env";
 import { dbError, fail } from "./errors";
 
 const urlSchema = z.string().url().refine(value => ["https:", "http:"].includes(new URL(value).protocol), "Use an HTTP or HTTPS reference URL.");
@@ -77,6 +78,7 @@ export function publicSnapshot(tutorial: Tutorial, sceneInput: unknown): Tutoria
   return { ...tutorial, ownerId: "", visibility: "public", assets: [], measurements: [], constraints: [], referenceUrls: [], job: null, scene: cleanScene, plan, ...(tutorial.adaptationPlan?{adaptationPlan:publicPlan(tutorial.adaptationPlan)}:{}),thumbnailUrl: null };
 }
 export async function wakeWorker(jobId: string) {
+  if(localMode()) return; // A separate local process drains the durable queue every two seconds.
   try {
     await fetch(process.env.MODAL_WORKER_URL!, { method: "POST", headers: { Authorization: `Bearer ${process.env.MODAL_WORKER_TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify({ jobId }), signal: AbortSignal.timeout(8000) });
   } catch { /* Durable pgmq message is also drained by the worker's schedule. */ }
