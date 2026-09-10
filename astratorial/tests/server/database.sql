@@ -1,0 +1,93 @@
+\set ON_ERROR_STOP on
+insert into auth.users values('00000000-0000-4000-8000-000000000001'),('00000000-0000-4000-8000-000000000002');
+select public.create_tutorial('00000000-0000-4000-8000-000000000001','{"id":"10000000-0000-4000-8000-000000000001","ownerId":"00000000-0000-4000-8000-000000000001","revision":1,"assets":[],"status":"draft"}');
+do $$ declare j jsonb; duplicate jsonb; claimed jsonb; balance numeric; expected boolean; begin
+ j:=public.enqueue_job('10000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','analyze');
+ duplicate:=public.enqueue_job('10000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','analyze');
+ assert j->>'id'=duplicate->>'id','duplicate enqueue created another job';
+ assert (select count(*) from pgmq.test_messages)=1,'enqueue was not atomic/idempotent';
+ claimed:=public.claim_job('worker-a',180);
+ assert claimed->'job'->>'id'=j->>'id','worker did not claim queued job';
+ assert public.heartbeat_job((j->>'id')::uuid,'worker-a',180),'lease heartbeat failed';
+ assert not public.heartbeat_job((j->>'id')::uuid,'worker-b',180),'different worker renewed the lease';
+ assert public.reserve_job_cost((j->>'id')::uuid,'worker-a','first-attempt',4),'valid budget reservation failed';
+ assert not public.reserve_job_cost((j->>'id')::uuid,'worker-a','first-attempt',4),'ambiguous retry authorized spending twice';
+ assert not public.reserve_job_cost((j->>'id')::uuid,'worker-a','too-large',22),'budget exceeded';
+ perform public.settle_job_cost((j->>'id')::uuid,'worker-a','first-attempt',2);
+ perform public.settle_job_cost((j->>'id')::uuid,'worker-a','first-attempt',2);
+ select spent_usd into balance from tutorial_budgets where tutorial_id='10000000-0000-4000-8000-000000000001' and revision=1;
+ assert balance=2,'cost settlement was not idempotent';
+ perform public.checkpoint_job((j->>'id')::uuid,'worker-a','analyze',30,'Evidence saved','{"frames":["a"]}','{"ownerId":"tampered","revision":99,"status":"needs_context"}','needs_context');
+ assert (select data->>'ownerId' from tutorials limit 1)='00000000-0000-4000-8000-000000000001','worker changed tutorial identity';
+ assert (select data->>'revision' from tutorials limit 1)='1','worker changed tutorial revision';
+ perform public.control_job((j->>'id')::uuid,'00000000-0000-4000-8000-000000000001','resume');
+ assert (public.job_json((j->>'id')::uuid)->>'spentUsd')::numeric=2,'resume reset the revision budget';
+ assert (select checkpoint->'frames' from generation_jobs where id=(j->>'id')::uuid)='["a"]','resume lost checkpoint';
+ expected:=false;
+ begin perform public.control_job((j->>'id')::uuid,'00000000-0000-4000-8000-000000000002','cancel'); exception when others then expected:=true; end;
+ assert expected,'different user cancelled job';
+ perform public.control_job((j->>'id')::uuid,'00000000-0000-4000-8000-000000000001','cancel');
+ expected:=false;
+ begin perform public.checkpoint_job((j->>'id')::uuid,'worker-a','ready',100,'Stale completion','{}'); exception when others then expected:=true; end;
+ assert expected,'cancelled worker could commit';
+end $$;
+do $$ declare expected boolean; asset_id uuid; begin
+ for idx in 1..3 loop
+  asset_id:=gen_random_uuid();
+  perform register_upload(asset_id,'00000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001',1,jsonb_build_object('id',asset_id,'size',1,'kind','video','path','00000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000001/r1/'||asset_id));
+ end loop;
+ expected:=false;asset_id:=gen_random_uuid();
+ begin perform register_upload(asset_id,'00000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001',1,jsonb_build_object('id',asset_id,'size',1,'kind','video','path','00000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000001/r1/'||asset_id));exception when others then expected:=true;end;
+ assert expected,'source reservation exceeded 2 GB despite a tiny declared size';
+ assert (select sum(reserved_bytes) from uploads where tutorial_id='10000000-0000-4000-8000-000000000001')=1800000000,'pending tokens did not reserve their true storage ceiling';
+ select id into asset_id from uploads where tutorial_id='10000000-0000-4000-8000-000000000001' limit 1;
+ perform complete_upload(asset_id,'00000000-0000-4000-8000-000000000001');
+ assert (select reserved_bytes from uploads where id=asset_id)=1,'verified completion did not release excess reservation';
+ delete from uploads where tutorial_id='10000000-0000-4000-8000-000000000001';
+ asset_id:=gen_random_uuid();
+ perform register_upload(asset_id,'00000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001',1,jsonb_build_object('id',asset_id,'size',8000000,'kind','manual','path','00000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000001/r1/'||asset_id));
+ expected:=false;asset_id:=gen_random_uuid();
+ begin perform register_upload(asset_id,'00000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001',1,jsonb_build_object('id',asset_id,'size',3000000,'kind','manual','path','00000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000001/r1/'||asset_id));exception when others then expected:=true;end;
+ assert expected,'PDF aggregate reservation exceeded 10 MB';
+ -- Reserving another small PDF is allowed; multiple manuals are supported.
+ asset_id:=gen_random_uuid();
+ perform register_upload(asset_id,'00000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001',1,jsonb_build_object('id',asset_id,'size',1000000,'kind','manual','path','00000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000001/r1/'||asset_id));
+end $$;
+insert into public.practice_sessions(id,owner_id,tutorial_id,data) values('20000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','{"id":"20000000-0000-4000-8000-000000000001","ownerId":"00000000-0000-4000-8000-000000000001","tutorialRevision":1,"version":0,"status":"active"}');
+do $$ declare expected boolean; begin
+ perform public.begin_practice_check('20000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001',0,'30000000-0000-4000-8000-000000000001',.15);
+ expected:=false;
+ begin perform public.begin_practice_check('20000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001',0,'30000000-0000-4000-8000-000000000002',.15); exception when others then expected:=true;end;
+ assert expected,'two visual checks ran at once';
+ expected:=false;
+ begin perform public.commit_practice('20000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001',0,'{"id":"20000000-0000-4000-8000-000000000001","ownerId":"00000000-0000-4000-8000-000000000001","version":1}','30000000-0000-4000-8000-000000000002');exception when others then expected:=true;end;
+ assert expected,'wrong check committed';
+ perform public.commit_practice('20000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001',0,'{"id":"20000000-0000-4000-8000-000000000001","ownerId":"00000000-0000-4000-8000-000000000001","version":1,"tutorialRevision":1,"status":"active"}');
+ expected:=false;
+ begin perform public.commit_practice('20000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001',0,'{"id":"20000000-0000-4000-8000-000000000001","ownerId":"00000000-0000-4000-8000-000000000001","version":1}','30000000-0000-4000-8000-000000000001');exception when others then expected:=true;end;
+ assert expected,'stale visual check advanced progress';
+end $$;
+insert into voice_sessions(id,owner_id,tutorial_id,tutorial_revision) values('40000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001',1);
+do $$ begin
+ assert public.charge_voice_expert('40000000-0000-4000-8000-000000000001','expert-1',.35),'expert reservation failed';
+ assert not public.charge_voice_expert('40000000-0000-4000-8000-000000000001','expert-1',.35),'expert retry authorized a duplicate paid call';
+ assert not public.update_voice_usage('40000000-0000-4000-8000-000000000001',1.7),'voice reservation ignored expert spending';
+ assert public.update_voice_usage('40000000-0000-4000-8000-000000000001',1.5),'valid voice reservation failed';
+ assert not public.charge_voice_expert('40000000-0000-4000-8000-000000000001','expert-2',.35),'expert reservation ignored pending voice spending';
+ assert public.update_voice_usage('40000000-0000-4000-8000-000000000001',.05),'voice settlement did not release its reservation';
+ assert public.charge_voice_expert('40000000-0000-4000-8000-000000000001','expert-2',.35),'available combined budget refused';
+ assert public.update_voice_usage('40000000-0000-4000-8000-000000000001',.05,'ended'),'voice termination failed';
+ assert not public.charge_voice_expert('40000000-0000-4000-8000-000000000001','expert-3',.35),'ended voice allowed another expert call';
+end $$;
+set role authenticated;
+set request.jwt.claim.sub='00000000-0000-4000-8000-000000000002';
+do $$ declare expected boolean; begin
+ assert (select count(*) from public.tutorials)=0,'RLS exposed a private tutorial';
+ assert (select count(*) from public.practice_sessions)=0,'RLS exposed a practice session';
+ expected:=false;begin perform public.reserve_job_cost(gen_random_uuid(),'x','x',1);exception when insufficient_privilege then expected:=true;end;
+ assert expected,'client could reserve budget';
+ expected:=false;begin update public.tutorials set visibility='public';exception when insufficient_privilege then expected:=true;end;
+ assert expected,'client could publish original assets';
+end $$;
+reset role;
+select 'database invariants passed' as result;
