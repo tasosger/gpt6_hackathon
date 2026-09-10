@@ -14,7 +14,7 @@ In **Record a video**, use **Flip camera** to switch between the front and rear 
 
 After selecting a video, the page shows connection, upload and processing progress immediately. Failed transfers retain the selected file and offer a resumable retry. A stopped worker is identified separately from a storage or AI error. See [upload feedback and recovery](docs/upload-feedback.md).
 
-Astra produces validated scene data, and Three.js turns it into an animated GLB with a generic instructor, objects and hand gestures. The same scene supports narrated video export. This is an **illustrated tutorial informed by the video**, with approximate object placement and manual guide alignment. It does not reconstruct measured surfaces or a photorealistic replica. No additional agent SDK, GPU worker or paid hosting service is required.
+Astra produces validated scene data (primitive parts with physically based finishes), and Three.js turns it into an animated GLB with a generic instructor, a plain counter and room, objects and hand gestures. The player and poster renderer share one studio setup: image-based lighting, a soft shadowed key light, ambient occlusion, MSAA and AgX tone mapping. Video understanding uses a fast GPT-6 Astra `low` reasoning pass with a 12,000-token ceiling, no web-search detour, and a 90-second deadline. Detailed scene modelling retains `max` reasoning and an 80,000-token ceiling. Cancellation aborts active model requests when the worker detects the ended lease. Both requests use a streaming connection so long reasoning runs can receive events before the final structured response. The previous `OPENAI_SCENE_REASONING` override is no longer used. Reference frames retain up to 1536 pixels and objects support up to 96 parts. Prompts preserve observed appliance type, control layout, finishes, orientation and precise hand contacts. This produces interactive geometry, not a Sora-generated video. The same scene supports narrated video export. This is an **illustrated tutorial informed by the video**, with approximate object placement and manual guide alignment. It does not reconstruct measured surfaces or a photorealistic replica. No additional agent SDK, GPU worker or paid hosting service is required.
 
 ## Run everything on this computer
 
@@ -121,3 +121,13 @@ Real espresso, cooking and assembly footage still need complete upload-to-practi
 - `tests`: server, database and browser checks.
 
 [Asset provenance](docs/assets.md) records the example imagery and bundled rendering assets.
+
+## Vercel deployment
+
+The production project needs `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (server secret), and `OPENAI_API_KEY` (server secret). Local `.env.local` settings are not uploaded to Vercel. Set `NEXT_PUBLIC_APP_URL` to the production origin and redeploy after changing configuration.
+
+The website runs on Vercel; the FFmpeg/browser tutorial worker runs separately with `npm run worker`, using the same Supabase project. Keep its host awake and connected while processing. The worker publishes a private heartbeat at `tutorial-assets/_runtime/tutorial-worker.json`; Vercel reads its freshness rather than looking for the worker process on its own filesystem. No public storage policy is required. A heartbeat expires after 20 seconds, so stopping the worker is reflected in the upload screen.
+
+Production verification must include a real guest video upload, completed generation, and opening its generated tutorial. A successful build or `/api/config` response alone does not verify processing.
+
+Apply `202609100007_worker_version.sql` through the Supabase SQL editor before starting the updated worker. The queue accepts `astratorial-v2-` worker IDs so obsolete copies cannot claim new jobs. Existing in-flight leases finish normally; failed jobs can then be retried with the current worker.

@@ -13,7 +13,7 @@ vi.mock("openai",async(importOriginal)=>{
   const original=await importOriginal<typeof import("openai")>();
   class MockOpenAI {
     static APIError=original.default.APIError;
-    responses={parse:ai.parse};
+    responses={stream:(...args:unknown[])=>({finalResponse:()=>ai.parse(...args)})};
     audio={speech:{create:ai.speech}};
   }
   return {...original,default:MockOpenAI};
@@ -25,7 +25,7 @@ vi.mock("../lib/local/render",()=>({renderIllustration:async(_glb:unknown,_manif
 }}));
 
 const plan:TutorialPlan={version:1,title:"Make pasta",goal:"Make pasta with the sauce in my fridge",description:"Use the supplies from your video",category:"cooking",difficulty:"Beginner",estimatedMinutes:10,objects:[{id:"pan",name:"Pan",kind:"vessel",observed:true,notes:""}],steps:[{id:"fill",title:"Fill the pan",instruction:"Fill the pan with water",narration:"Fill your pan with water from the faucet.",durationSeconds:5,objectIds:["pan"],observable:true,completionCriteria:"The pan contains water",sourceIds:[],action:"move"}],sources:[],questions:[{id:"salt",question:"Do you have salt?",reason:"Optional seasoning",required:true}],constraints:[]};
-const illustration:Illustration={surface:{width:1,depth:.6,color:"#dfd8c8"},objects:[{id:"pan",position:{x:0,y:0,z:0},movable:true,parts:[{shape:"cylinder",position:{x:0,y:.05,z:0},size:{x:.2,y:.1,z:.2},rotation:{x:0,y:0,z:0},color:"#999999",metallic:true}]}],gestures:[{stepId:"fill",objectId:"pan",hand:"right",contact:{x:0,y:.08,z:0},endPosition:{x:.2,y:0,z:.1},endRotation:null}],uncertainty:["Approximate dimensions"]};
+const illustration:Illustration={surface:{width:1,depth:.6,color:"#dfd8c8"},objects:[{id:"pan",position:{x:0,y:0,z:0},movable:true,parts:[{shape:"cylinder",position:{x:0,y:.05,z:0},size:{x:.2,y:.1,z:.2},rotation:{x:0,y:0,z:0},color:"#999999",metallic:true,finish:null}]}],gestures:[{stepId:"fill",objectId:"pan",hand:"right",contact:{x:0,y:.08,z:0},endPosition:{x:.2,y:0,z:.1},endRotation:null}],uncertainty:["Approximate dimensions"]};
 const tutorial:Tutorial={id:"tutorial",ownerId:"owner",title:"Untitled tutorial",slug:"untitled-tutorial",description:"",category:"home",visibility:"private",status:"generating",revision:1,createdAt:"now",updatedAt:"now",goal:"",constraints:[],referenceUrls:[],assets:[{id:"video",path:"owner/tutorial/r1/video.mp4",name:"Kitchen.mp4",mimeType:"video/mp4",size:100,kind:"video",pass:"room"}],measurements:[],plan:null,scene:null,job:null,thumbnailUrl:null,isExample:false};
 const job:GenerationJob={id:"job",tutorialId:"tutorial",revision:1,kind:"generate",status:"running",stage:"ingest",progress:0,message:"",budgetUsd:25,spentUsd:0,reservedUsd:0,createdAt:"now",updatedAt:"now",error:null};
 const ingest={frames:[{path:"owner/tutorial/r1/frame.jpg",label:"Kitchen at 1 second"}],transcript:"I want to make pasta. The sauce is in the fridge and the pasta is in the pantry.",manualText:""};
@@ -65,6 +65,10 @@ describe("single-video illustrated generation",()=>{
     expect(saves.at(-1)).toMatchObject({p_stage:"ready",p_status:"completed",p_tutorial_patch:{status:"ready",scene:{mode:"illustrated",quality:{approved:true}}}});
     expect(saves.at(-1)!.p_tutorial_patch.scene?.assets.map(asset=>asset.kind)).toEqual(["scene","narration","poster"]);
     expect(ai.parse).toHaveBeenCalledTimes(2);
+    expect(ai.parse.mock.calls[0][0]).toMatchObject({reasoning:{effort:"low"},max_output_tokens:12000});
+    expect(ai.parse.mock.calls[0][0].tools).toBeUndefined();
+    expect(ai.parse.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+    expect(ai.parse.mock.calls[1][0]).toMatchObject({reasoning:{effort:"max"},max_output_tokens:80000});
     expect(JSON.parse(ai.parse.mock.calls[0][0].input[0].content[0].text).spokenInstructions).toBe(ingest.transcript);
     expect(JSON.parse(ai.parse.mock.calls[1][0].input[0].content[0].text).plan.questions).toEqual([]);
     expect(ai.speech).toHaveBeenCalledTimes(1);

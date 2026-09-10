@@ -3,12 +3,12 @@
 import { Component, Suspense, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { ContactShadows, Html, OrbitControls, RoundedBox } from "@react-three/drei";
-import { AnimationMixer, DoubleSide, Group, Mesh, MeshStandardMaterial, Vector3, Quaternion, Color, PMREMGenerator, type Object3D } from "three";
+import { AnimationMixer, DoubleSide, Group, Mesh, MeshStandardMaterial, Vector3, Quaternion, Color, type Object3D } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { clone } from "three/examples/jsm/utils/SkeletonUtils.js";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { createScenePipeline, installSceneLighting } from "@/lib/scene-lighting";
 import type { SceneManifest, Tutorial, Vec3 } from "@/lib/contracts";
 import type { Calibration } from "@/lib/calibration";
 
@@ -24,17 +24,13 @@ class SceneBoundary extends Component<{ children: ReactNode; onError?: (message:
 }
 
 function StudioLight() {
-  const { gl, scene } = useThree();
-  useEffect(() => {
-    const generator = new PMREMGenerator(gl), room = new RoomEnvironment();
-    const environment = generator.fromScene(room, .04);
-    const previous = scene.environment, previousIntensity = scene.environmentIntensity;
-    // Renderer-owned lighting resource, released with this canvas.
-    // eslint-disable-next-line react-hooks/immutability
-    scene.environment = environment.texture;
-    scene.environmentIntensity = .35;
-    return () => { scene.environment = previous; scene.environmentIntensity = previousIntensity; environment.dispose(); room.dispose(); generator.dispose(); };
-  }, [gl, scene]);
+  const { gl, scene, camera, size } = useThree();
+  useEffect(() => installSceneLighting(gl, scene), [gl, scene]);
+  // Ambient occlusion, MSAA and tone mapping run through one composer; it replaces the default render.
+  const pipeline = useMemo(() => createScenePipeline(gl, scene, camera, size.width, size.height), [gl, scene, camera]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { pipeline.setSize(size.width, size.height); }, [pipeline, size.width, size.height]);
+  useEffect(() => () => pipeline.dispose(), [pipeline]);
+  useFrame(() => pipeline.render(), 1);
   return null;
 }
 
@@ -194,12 +190,10 @@ export default function SceneViewer({ tutorial, time, mode, ghost = false, calib
   const currentStep = scene?.steps.findIndex(s => time >= s.startTime && time < s.endTime) ?? (sampleStep < 0 ? (tutorial.plan?.steps.length ?? 1) - 1 : sampleStep);
   const hasAsset = scene?.assets.some(a => (a.kind === "scene" || a.kind === "sanitized_scene") && a.url);
   if (!hasAsset && !tutorial.isExample) return <div className="scene-unavailable"><span>Your scene is being prepared</span><p>The player will become available when your reconstruction passes its quality checks.</p></div>;
-  return <SceneBoundary onError={onError}><Canvas shadows dpr={[1, 1.5]} camera={{ position: [2.4, 2.15, 2.8], fov: 42, near: .01, far: 100 }} gl={{ antialias: true, alpha: ghost }} style={{ background: ghost ? "transparent" : "#dfd8c9" }}>
+  return <SceneBoundary onError={onError}><Canvas shadows dpr={[1, 2]} camera={{ position: [2.4, 2.15, 2.8], fov: 42, near: .01, far: 100 }} gl={{ antialias: true, alpha: ghost }} style={{ background: ghost ? "transparent" : "#dfd8c9" }}>
     {!ghost && <color attach="background" args={["#dfd8c9"]} />}
     {!ghost && <StudioLight />}
-    <ambientLight intensity={1.2} /><hemisphereLight args={["#fff3de", "#6d755f", 1.4]} />
-    <directionalLight position={[-2, 5, 3]} intensity={3.2} color="#fff5df" castShadow shadow-mapSize={[1024, 1024]} shadow-camera-left={-4} shadow-camera-right={4} shadow-camera-top={4} shadow-camera-bottom={-4} shadow-bias={-.001} />
-    <directionalLight position={[3, 3, -1]} intensity={1.2} color="#e2e8ff" />
+    {ghost && <ambientLight intensity={1.2} />}
     <Suspense fallback={<Html center><span className="scene-loading">Preparing your scene…</span></Html>}>
       {hasAsset && scene ? <RecordedScene manifest={scene} time={time} ghost={ghost} opacity={opacity} objectAnchors={objectAnchors} detailed={detailed} onReady={onReady} /> : <DemoScene category={tutorial.category} time={time} step={Math.max(0, currentStep)} ghost={ghost} mode={mode} />}
       {!ghost && landmarkIndex !== undefined && scene?.landmarks[landmarkIndex] && <mesh position={scene.landmarks[landmarkIndex].position}><sphereGeometry args={[.022, 20, 16]} /><meshBasicMaterial color="#14b8a6" depthTest={false} /></mesh>}

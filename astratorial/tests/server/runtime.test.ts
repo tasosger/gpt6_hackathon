@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { workerStatusFromSnapshot } from "../../lib/local/runtime";
+import { workerStatusFromSnapshot, remoteWorkerStatus } from "../../lib/local/runtime";
 
 describe("local worker availability", () => {
   const now = 1_000_000;
@@ -22,3 +22,10 @@ describe("local worker availability", () => {
     expect(status).not.toHaveProperty("pid");
   });
 });
+
+ it("checks remote freshness without looking for the worker PID on the web server", () => {
+   const now = Date.now();
+   expect(remoteWorkerStatus({pid:999999,updatedAt:now,queueConnected:true},now).status).toBe("ready");
+   expect(remoteWorkerStatus({pid:999999,updatedAt:now-21000,queueConnected:true},now).status).toBe("offline");
+   expect(remoteWorkerStatus({pid:999999,updatedAt:now,queueConnected:false},now).status).toBe("unreachable");
+ });

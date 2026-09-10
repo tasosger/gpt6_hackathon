@@ -17,19 +17,20 @@ async function renderLocalScene(glbPath:string,manifest:SceneManifest,directory:
   const browserScript=await build({stdin:{contents:`
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+    import { createScenePipeline, installSceneLighting } from './lib/scene-lighting';
     const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
-    renderer.setSize(960,720);renderer.setPixelRatio(1);renderer.setClearColor(0xeeeae1);renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.3;
+    renderer.setSize(1280,960);renderer.setPixelRatio(1);renderer.setClearColor(0xdfd8c9);
     document.body.appendChild(renderer.domElement);
-    const scene=new THREE.Scene();scene.add(new THREE.HemisphereLight(0xffffff,0xa7a694,3));
-    for(const [position,intensity]of [[[2,4,3],3],[[-2,2,-1],2]]){const light=new THREE.DirectionalLight(0xffffff,intensity);light.position.set(...position);scene.add(light);}
-    const camera=new THREE.PerspectiveCamera(43,960/720,.01,50);camera.position.set(...${JSON.stringify(manifest.cameras.third.position)});camera.lookAt(...${JSON.stringify(manifest.cameras.third.target)});
-    const asset=await new GLTFLoader().loadAsync('./scene.glb');scene.add(asset.scene);
+    const scene=new THREE.Scene();installSceneLighting(renderer,scene);
+    const camera=new THREE.PerspectiveCamera(43,1280/960,.01,50);camera.position.set(...${JSON.stringify(manifest.cameras.third.position)});camera.lookAt(...${JSON.stringify(manifest.cameras.third.target)});
+    const asset=await new GLTFLoader().loadAsync('./scene.glb');asset.scene.traverse(node=>{if(node.isMesh){node.castShadow=true;node.receiveShadow=true;}});scene.add(asset.scene);
     const mixer=new THREE.AnimationMixer(asset.scene);for(const clip of asset.animations)mixer.clipAction(clip).play();
-    const draw=time=>{mixer.setTime(time);renderer.render(scene,camera);};draw(1);
+    const pipeline=createScenePipeline(renderer,scene,camera,1280,960);
+    const draw=time=>{mixer.setTime(time);pipeline.render();};draw(1);
     window.recordTutorial=async function(duration){
       const mimeType=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(type=>MediaRecorder.isTypeSupported(type));
       if(!mimeType)throw new Error('This browser cannot record the scene.');
-      const stream=renderer.domElement.captureStream(24);const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:1300000});const chunks=[];
+      const stream=renderer.domElement.captureStream(24);const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:6000000});const chunks=[];
       const result=new Promise(resolve=>{recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=async()=>{const bytes=new Uint8Array(await new Blob(chunks,{type:mimeType}).arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));resolve(btoa(binary));};});
       draw(0);recorder.start(1000);const start=performance.now();
       await new Promise(resolve=>{const frame=()=>{const time=Math.min(duration,(performance.now()-start)/1000);draw(time);if(time<duration)requestAnimationFrame(frame);else resolve();};requestAnimationFrame(frame);});
@@ -50,7 +51,7 @@ async function renderLocalScene(glbPath:string,manifest:SceneManifest,directory:
   const origin=`http://127.0.0.1:${address.port}`;
   const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}),args:["--disable-background-timer-throttling","--disable-renderer-backgrounding"]}).catch(error=>{server.close();throw error;});
   try {
-    const page=await browser.newPage({viewport:{width:960,height:720}});
+    const page=await browser.newPage({viewport:{width:1280,height:960}});
     // Surface WebGL/GLB load failures immediately instead of hiding their cause
     // behind a 30-second readiness timeout. Only an allowlisted message escapes.
     const failed=new Promise<never>((_resolve,reject)=>{

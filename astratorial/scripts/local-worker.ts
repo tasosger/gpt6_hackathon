@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { localDatabase, rpc, runLocalClaim } from "../lib/local/pipeline";
 import { writeWorkerHeartbeat } from "../lib/local/runtime";
 loadEnvConfig(process.cwd());
-const workerId=`local-${randomUUID()}`;
+const workerId=`astratorial-v2-${randomUUID()}`;
 let stopping=false;
 process.on("SIGINT",()=>{stopping=true;console.log("Finishing the current checkpoint, then stopping. A restart resumes queued work.");});
 process.on("SIGTERM",()=>{stopping=true;});
@@ -15,12 +15,12 @@ async function main() {
   const heartbeat=async()=>{
     if(heartbeatWriting)return;
     heartbeatWriting=true;
-    try {await writeWorkerHeartbeat(queueConnected);} catch {console.error("Worker status could not be saved locally.");}
+    try {await writeWorkerHeartbeat(queueConnected);} catch {console.error("Worker status could not be saved. Check local storage and the Supabase connection.");}
     finally {heartbeatWriting=false;}
   };
   await heartbeat();
   const timer=setInterval(()=>void heartbeat(),5000);
-  console.log("Astratorial local worker ready. Mode: illustrated 3D. Waiting for uploaded videos.");
+  console.log(`Astratorial local worker ready (${workerId}). Mode: illustrated 3D. Waiting for uploaded videos.`);
   try {
     while(!stopping) {
       try {const claim=await rpc(db,"claim_job",{p_worker_id:workerId,p_lease_seconds:180});queueConnected=true;await heartbeat();if(claim){await runLocalClaim(db,claim,workerId);continue;}}

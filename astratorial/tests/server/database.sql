@@ -8,18 +8,19 @@ do $$ declare j jsonb; duplicate jsonb; claimed jsonb; balance numeric; expected
  duplicate:=public.enqueue_job('10000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','analyze');
  assert j->>'id'=duplicate->>'id','duplicate enqueue created another job';
  assert (select count(*) from pgmq.test_messages)=1,'enqueue was not atomic/idempotent';
- claimed:=public.claim_job('worker-a',180);
+ assert public.claim_job('legacy-worker',180) is null,'obsolete worker claimed a job';
+ claimed:=public.claim_job('astratorial-v2-worker-a',180);
  assert claimed->'job'->>'id'=j->>'id','worker did not claim queued job';
- assert public.heartbeat_job((j->>'id')::uuid,'worker-a',180),'lease heartbeat failed';
- assert not public.heartbeat_job((j->>'id')::uuid,'worker-b',180),'different worker renewed the lease';
- assert public.reserve_job_cost((j->>'id')::uuid,'worker-a','first-attempt',4),'valid budget reservation failed';
- assert not public.reserve_job_cost((j->>'id')::uuid,'worker-a','first-attempt',4),'ambiguous retry authorized spending twice';
- assert not public.reserve_job_cost((j->>'id')::uuid,'worker-a','too-large',22),'budget exceeded';
- perform public.settle_job_cost((j->>'id')::uuid,'worker-a','first-attempt',2);
- perform public.settle_job_cost((j->>'id')::uuid,'worker-a','first-attempt',2);
+ assert public.heartbeat_job((j->>'id')::uuid,'astratorial-v2-worker-a',180),'lease heartbeat failed';
+ assert not public.heartbeat_job((j->>'id')::uuid,'astratorial-v2-worker-b',180),'different worker renewed the lease';
+ assert public.reserve_job_cost((j->>'id')::uuid,'astratorial-v2-worker-a','first-attempt',4),'valid budget reservation failed';
+ assert not public.reserve_job_cost((j->>'id')::uuid,'astratorial-v2-worker-a','first-attempt',4),'ambiguous retry authorized spending twice';
+ assert not public.reserve_job_cost((j->>'id')::uuid,'astratorial-v2-worker-a','too-large',22),'budget exceeded';
+ perform public.settle_job_cost((j->>'id')::uuid,'astratorial-v2-worker-a','first-attempt',2);
+ perform public.settle_job_cost((j->>'id')::uuid,'astratorial-v2-worker-a','first-attempt',2);
  select spent_usd into balance from tutorial_budgets where tutorial_id='10000000-0000-4000-8000-000000000001' and revision=1;
  assert balance=2,'cost settlement was not idempotent';
- perform public.checkpoint_job((j->>'id')::uuid,'worker-a','analyze',30,'Evidence saved','{"frames":["a"]}','{"ownerId":"tampered","revision":99,"goal":"Make an espresso from the captured machine","status":"needs_context"}','needs_context');
+ perform public.checkpoint_job((j->>'id')::uuid,'astratorial-v2-worker-a','analyze',30,'Evidence saved','{"frames":["a"]}','{"ownerId":"tampered","revision":99,"goal":"Make an espresso from the captured machine","status":"needs_context"}','needs_context');
  assert (select data->>'ownerId' from tutorials limit 1)='00000000-0000-4000-8000-000000000001','worker changed tutorial identity';
  assert (select data->>'revision' from tutorials limit 1)='1','worker changed tutorial revision';
  assert (select data->>'goal' from tutorials limit 1)='Make an espresso from the captured machine','video analysis could not persist an inferred goal';
@@ -31,7 +32,7 @@ do $$ declare j jsonb; duplicate jsonb; claimed jsonb; balance numeric; expected
  assert expected,'different user cancelled job';
  perform public.control_job((j->>'id')::uuid,'00000000-0000-4000-8000-000000000001','cancel');
  expected:=false;
- begin perform public.checkpoint_job((j->>'id')::uuid,'worker-a','ready',100,'Stale completion','{}'); exception when others then expected:=true; end;
+ begin perform public.checkpoint_job((j->>'id')::uuid,'astratorial-v2-worker-a','ready',100,'Stale completion','{}'); exception when others then expected:=true; end;
  assert expected,'cancelled worker could commit';
 end $$;
 do $$ declare expected boolean; asset_id uuid; begin
