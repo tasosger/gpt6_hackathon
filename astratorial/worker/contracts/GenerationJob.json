@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tutorialId": {
+      "type": "string"
+    },
+    "revision": {
+      "type": "number"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "analyze",
+        "generate",
+        "publish",
+        "export"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "needs_context",
+        "budget_paused",
+        "completed",
+        "cancelled",
+        "failed"
+      ]
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "upload",
+        "ingest",
+        "analyze",
+        "reconstruct",
+        "plan",
+        "animate",
+        "render",
+        "validate",
+        "publish",
+        "ready"
+      ]
+    },
+    "progress": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "message": {
+      "type": "string"
+    },
+    "budgetUsd": {
+      "default": 25,
+      "type": "number"
+    },
+    "spentUsd": {
+      "default": 0,
+      "type": "number"
+    },
+    "reservedUsd": {
+      "default": 0,
+      "type": "number"
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string"
+    },
+    "error": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "tutorialId",
+    "revision",
+    "kind",
+    "status",
+    "stage",
+    "progress",
+    "message",
+    "budgetUsd",
+    "spentUsd",
+    "reservedUsd",
+    "createdAt",
+    "updatedAt",
+    "error"
+  ],
+  "additionalProperties": false
+}
