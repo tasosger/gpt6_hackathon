@@ -5,7 +5,7 @@ import sys
 import tempfile
 import unittest
 import numpy as np
-sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parents[1] / 'sandbox')]
+sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parents[1] / 'geometry_tools')]
 try:
     import open3d as o3d
     import pycolmap

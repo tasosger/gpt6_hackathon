@@ -76,7 +76,7 @@ export class LocalPipeline {
     this.directory=await mkdtemp(join(tmpdir(),"astratorial-local-"));
     const heartbeat=setInterval(()=>{void this.lease().catch(()=>{this.aborted=true;});},30_000);
     try {
-      if(this.checkpoint.mode&&this.checkpoint.mode!=="illustrated")throw new ContextNeeded("This job belongs to the measured cloud pipeline. Start a new illustrated revision or restore the cloud worker.");
+      if(this.checkpoint.mode&&this.checkpoint.mode!=="illustrated")throw new ContextNeeded("This saved job uses an unsupported generation format. Start a new tutorial revision to create an illustrated scene.");
       this.checkpoint.mode="illustrated";
       if(this.job.kind==="publish"||this.job.kind==="export")await this.exportExisting();
       else {
@@ -189,7 +189,7 @@ export class LocalPipeline {
   }
   private async exportExisting() {
     const manifest=this.tutorial.scene;
-    if(!manifest||manifest.mode!=="illustrated")throw new ContextNeeded("Use the measured worker to export a reconstructed scene.");
+    if(!manifest||manifest.mode!=="illustrated")throw new ContextNeeded("This saved scene uses an unsupported format. Create a new illustrated tutorial revision before exporting.");
     const source=manifest.assets.find(a=>a.kind==="scene");if(!source)throw new Error("Scene asset missing.");
     const glbPath=join(this.directory,"scene.glb");await this.download("tutorial-assets",source.path,glbPath);
     if(this.job.kind==="publish") {

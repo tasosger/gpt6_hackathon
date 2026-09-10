@@ -1,1 +1,1 @@
-"""Cloud pipeline. Blender and uploaded media execute only in remote sandboxes."""
+"""Local voice supervision and independent geometry validation utilities."""

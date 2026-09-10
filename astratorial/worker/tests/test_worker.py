@@ -16,7 +16,7 @@ from astratorial.budget import Budget
 from astratorial.config import BudgetPaused
 from astratorial.store import object_path
 from astratorial.voice import VoiceLedger, usage_cost, tool_arguments
-from astratorial.ai import strict_schema
+from astratorial.schema import strict_schema
 from astratorial.segmentation import polygon_membership, supported_faces, angular_coverage
 from astratorial.textured_ply import read_textured_ply
 from astratorial.cohorts import validate_cohorts, rigid_fit, validate_registration, observed_state_transform
