@@ -2,30 +2,76 @@
 
 Personal tutorials built around your actual room, tools, and goal. Next.js 16 / React 19 / TypeScript, Three.js + React Three Fiber, Supabase, OpenAI, and isolated Modal reconstruction/render workers.
 
-The application includes guided capture, resumable uploads, video/audio recording, editable analysis and follow-up questions, marked scale measurements, durable generation, an interactive three-camera player, recorded narration, conversational WebRTC voice, calibrated camera practice, a private library, and task-area publication previews.
+The hackathon application turns one video into an animated tutorial, with resumable uploads, camera-and-microphone recording, durable generation, an interactive three-camera player, and recorded narration. It also includes conversational WebRTC voice, camera practice, a private library, and publication previews. The optional measured pipeline retains advanced capture and review tools.
 
-## Current delivery status
+## Hackathon flow
 
-The application runs locally without credentials in an explicitly labeled preview workspace. The three illustrative examples exercise the player and camera permission flow; they are not reconstructions of uploaded footage. Local drafts cannot invoke paid generation.
+1. Open **Upload a video**, then pick or record one short video. Show your workspace and say what you want to do in the recording—for example, “I want to make pasta,” while showing the pasta, sauce, pan, sink, and stove.
+2. Uploading or finishing the recording starts generation automatically. Astra reads sampled frames and transcribed speech, identifies the goal and available supplies, plans the steps, and builds the animation in one saved job. There is no goal form, confirmation screen, follow-up question, or second create button.
+3. Watch the narrated animation from first-person, third-person, or free camera. Optional voice and camera practice are available afterward.
 
-The cloud adapters, database migration, worker Docker image definition, Modal functions, and deployment configuration are implemented. **A real end-to-end scan generation has not been executed in this workspace:** Vercel, Supabase, Modal, and a replacement OpenAI key are not configured, and no acceptance footage was supplied. The worker image must be built and smoke-tested in Modal. Device FPS, visual fidelity, and the espresso/cooking/assembly acceptance scenarios remain deployment acceptance gates, not completed measurements.
+The spoken goal takes priority over other plausible tasks in the scene. Astra uses visible or mentioned tools and ingredients, makes reasonable everyday assumptions, and omits optional extras. It never pauses the illustrated workflow to ask for more context. If processing fails, the same saved job can be retried within its existing allowance; reloading the page restores progress.
 
-## Run the application
+The runtime uses the existing OpenAI Responses API with `gpt-6-astra`, a transcription model for the video's audio, and speech generation for narration. Astra produces validated scene data that the Three.js renderer animates. A Codex SDK agent is not needed for this flow.
 
-Requires Node.js 22+ and npm. From this directory:
+The default hackathon mode runs on an ordinary computer. Astra authors validated scene data, and Three.js turns it into an actual animated GLB with a generic instructor, objects and hand gestures. OpenAI generates recorded narration; the same scene is rendered for video export. This is an **illustrated tutorial informed by the video**, not a measured or photoreal replica. Manual guide alignment is a visual aid. The separate COLMAP/Blender/Modal measured pipeline remains available for further development.
+
+## Run everything on this computer
+
+From the `astratorial` directory, after the local settings are configured:
+
+```sh
+npm run build
+npm run demo
+```
+
+Open <http://localhost:4173>. `npm run demo` starts the website, tutorial worker and voice supervisor together. Keep the terminal and computer running; **Ctrl+C** stops all three. To develop with live reload, use `npm run demo -- --dev` instead. Stop any old server on ports 4173 and 8766 first.
+
+For the initial installation on another Mac (Node.js 22+ and Python 3.11+):
 
 ```sh
 npm ci
+brew install ffmpeg poppler cloudflared
+npx playwright install chromium
+python3 -m venv worker/.venv
+worker/.venv/bin/python -m pip install -r worker/requirements-local-voice.txt
 cp .env.example .env.local
-npm run build
-npm start -- --port 3000
 ```
 
-Open <http://localhost:3000>. Empty service settings activate preview mode, where you can browse examples, operate all player controls, test camera permissions, and save a draft on this device. After cloud setup, run `npm run dev` for development.
+Fill the ignored `.env.local` with the Supabase project URL, anon key, service-role key and OpenAI key. Set `ASTRATORIAL_LOCAL_WORKER=1`, `LOCAL_VOICE_URL=http://127.0.0.1:8766/voice`, and a random `LOCAL_WORKER_TOKEN`. Keep every secret server-side; only the project URL and anon key use `NEXT_PUBLIC_` names. Never commit `.env.local` or paste keys into source files.
 
-The original API key pasted into the conversation was not stored or used. Revoke it and configure a replacement through server-side environment settings. Never place it in a `NEXT_PUBLIC_` variable.
+The connected Supabase project must have both migrations applied, in order:
 
-## Configure the managed services
+- `supabase/migrations/202609100001_astratorial.sql`
+- `supabase/migrations/202609100002_free_hackathon.sql`
+
+In Supabase Authentication, enable **Allow anonymous sign-ins**. A guest receives their own authenticated user ID and private rows; owner isolation stays enabled. Guest access belongs to the browser that created it. Do not clear its cookies if you want to return to those private tutorials. Email sign-in remains optional and is a separate account; guest-to-email migration is not implemented.
+
+The free setup accepts videos up to **50 MB**. The recorder uses a lower bitrate and a 90-second limit. Capture reservations are limited to 200 MB per tutorial and 500 MB across this demo project, leaving room for derived files within free storage. Short 10–30 second clips are the best starting point.
+
+### Open it on your phone
+
+Stop any existing demo, then run:
+
+```sh
+npm run phone
+```
+
+This creates a free HTTPS link and starts the website, worker and voice supervisor together. Open the printed `https://…trycloudflare.com` link on your phone. Keep the terminal running; **Ctrl+C** stops everything. Use `npm run phone -- --dev` while editing the app.
+
+HTTPS is required for phone camera and microphone access; a plain LAN HTTP address will not enable them. The launcher explicitly authorizes only its generated public origin. This is a temporary development tunnel with a new address on each run and no uptime guarantee. Stop it after the demo. [Cloudflare Quick Tunnel documentation](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
+
+For separate terminals or troubleshooting, the underlying commands are:
+
+```sh
+npm start -- --port 4173
+npm run worker
+npm run voice
+```
+
+The local supervisor calls the website over loopback; it does not need to be exposed through the tunnel. See [local voice details](worker/LOCAL_VOICE.md). Local hosting and the free database do not make OpenAI calls free: generation and voice use the configured API account and the application allowances below.
+
+## Optional managed deployment
 
 1. Create or select a Supabase project near the Vercel/Modal region. Apply `supabase/migrations/202609100001_astratorial.sql` through the Supabase SQL editor or the linked Supabase CLI. The migration creates the private capture/artifact buckets, RLS-protected tables, durable queue, budget ledger, leases, and transactional progress functions. See [backend setup](docs/backend.md).
 2. Enable email OTP in Supabase Auth. Set the application URL and allowed redirect URLs to the actual HTTPS deployment. The sign-in screen uses email codes; configure the email template to display the OTP token. Set the project URL, anon key, and server-only service-role key in `.env.local` and Vercel environment settings.
@@ -37,7 +83,7 @@ The original API key pasted into the conversation was not stored or used. Revoke
 
 Preview and production should use separate Supabase projects, worker secrets, storage, and API budgets. Long reconstruction jobs stay on Modal; the website only authorizes work and reads durable job progress. The once-per-minute Modal recovery function resumes eligible queue work even if the immediate wake request failed.
 
-## Capture that can be reconstructed
+## Advanced measured reconstruction capture
 
 - Keep the room and equipment stationary during overlapping room and work-area passes. Avoid motion blur; use diffuse light and fixed lens/zoom. Reflective, transparent, or featureless surfaces may need additional views and may remain unreconstructable.
 - Record movable items while they are stationary. Capture the surface beneath them separately and show relevant open/closed states; do not mix changing states into a rigid room scan. The worker can process up to three supplementary stationary scan groups per revision, with at least six overlapping views in each and unchanged background for registration. Rigid state changes must pass independent alignment checks; unsupported or ambiguous geometry requests more capture.

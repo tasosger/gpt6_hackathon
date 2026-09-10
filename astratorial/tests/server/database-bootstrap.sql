@@ -11,6 +11,8 @@ create function auth.uid() returns uuid language sql stable as $$ select nullif(
 grant usage on schema auth,public to authenticated,anon,service_role;
 grant execute on function auth.uid() to authenticated,anon,service_role;
 create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint);
+grant usage on schema storage to service_role;
+grant select on storage.buckets to service_role;
 create table pgmq.test_messages(msg_id bigserial primary key,message jsonb,vt timestamptz default now(),archived boolean default false);
 create function pgmq.create(text) returns void language sql as $$select$$;
 create function pgmq.send(text,jsonb) returns bigint language sql as $$insert into pgmq.test_messages(message) values($2) returning msg_id$$;

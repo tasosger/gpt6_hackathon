@@ -9,8 +9,8 @@ import { requireVoice } from "./env";
 export const voiceInput = z.object({ tutorialId: z.string().uuid(), practiceSessionId: z.string().uuid().optional(), sdp: z.string().min(20).max(100_000) });
 export function requireWorkerToken(request: Request) {
   const provided = request.headers.get("authorization") || "";
-  const expected = `Bearer ${process.env.MODAL_WORKER_TOKEN || ""}`;
-  if (!process.env.MODAL_WORKER_TOKEN || provided.length !== expected.length || !timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) fail(401, "Worker authorization required.");
+  const expected = `Bearer ${process.env.LOCAL_WORKER_TOKEN || process.env.MODAL_WORKER_TOKEN || ""}`;
+  if (!(process.env.LOCAL_WORKER_TOKEN || process.env.MODAL_WORKER_TOKEN) || provided.length !== expected.length || !timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) fail(401, "Worker authorization required.");
 }
 export async function startVoice(ownerId: string, tutorial: Tutorial, input: z.infer<typeof voiceInput>) {
   requireVoice();
@@ -51,7 +51,7 @@ export async function startVoice(ownerId: string, tutorial: Tutorial, input: z.i
     const answer = await response.text();
     const saved = await db.from("voice_sessions").update({ call_id: callId }).eq("id",id); dbError(saved.error);
     // Do not return the SDP until the independent server-side supervisor is attached.
-    const guarded = await fetch(process.env.MODAL_VOICE_URL!, { method:"POST",headers:{Authorization:`Bearer ${process.env.MODAL_WORKER_TOKEN}`,"Content-Type":"application/json"},body:JSON.stringify({voiceSessionId:id,callId,maxSeconds:VOICE_MAX_SECONDS,budgetUsd:VOICE_BUDGET_USD}),signal:AbortSignal.timeout(20_000) });
+    const guarded = await fetch((process.env.LOCAL_VOICE_URL || process.env.MODAL_VOICE_URL)!, { method:"POST",headers:{Authorization:`Bearer ${process.env.LOCAL_WORKER_TOKEN || process.env.MODAL_WORKER_TOKEN}`,"Content-Type":"application/json"},body:JSON.stringify({voiceSessionId:id,callId,maxSeconds:VOICE_MAX_SECONDS,budgetUsd:VOICE_BUDGET_USD}),signal:AbortSignal.timeout(20_000) });
     if (!guarded.ok || (await guarded.json()).guarded !== true) fail(503,"The voice supervisor is unavailable. Please try again shortly.");
     const active = await db.from("voice_sessions").update({ status:"active" }).eq("id",id).eq("status","starting").select("id").maybeSingle(); dbError(active.error);
     if (!active.data) fail(503,"This voice session ended before connecting. Please try again.");

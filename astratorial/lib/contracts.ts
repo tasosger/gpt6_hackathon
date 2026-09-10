@@ -41,6 +41,7 @@ export const SceneAssetSchema = z.object({
   stepId: z.string().optional(), bytes: z.number().optional(), url: z.string().optional(),
 });
 export const SceneManifestSchema = z.object({
+  mode: z.enum(["illustrated", "measured"]).optional(),
   version: z.literal(1), units: z.literal("meters"), assets: z.array(SceneAssetSchema),
   durationSeconds: z.number().positive(),
   cameras: z.object({ first: z.object({ position: Vec3Schema, target: Vec3Schema }), third: z.object({ position: Vec3Schema, target: Vec3Schema }) }),
@@ -85,7 +86,7 @@ export const PracticeSessionSchema = z.object({
 export type PracticeSession = z.infer<typeof PracticeSessionSchema>;
 export const StepCheckSchema = z.object({ stepId: z.string(), status: z.enum(["complete", "incomplete", "uncertain"]), evidence: z.string(), guidance: z.string() });
 export type StepCheck = z.infer<typeof StepCheckSchema>;
-export type AppConfig = { configured: boolean; services: { database: boolean; openai: boolean; worker: boolean }; user: { id: string; email: string } | null };
+export type AppConfig = { generationMode?: "illustrated" | "measured"; configured: boolean; services: { database: boolean; openai: boolean; worker: boolean }; user: { id: string; email: string } | null };
 export const GENERATION_BUDGET_USD = 25;
 export const VOICE_BUDGET_USD = 2;
 export const VOICE_MAX_SECONDS = 600;

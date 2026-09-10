@@ -26,6 +26,10 @@ export default function PracticeWorkspace({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [calibration, setCalibration] = useState<Calibration | null>(null);
   const [points, setPoints] = useState<Correspondence[]>([]);
+  const [illustratedAligned, setIllustratedAligned] = useState(false);
+  const [guideReady, setGuideReady] = useState(false);
+  const [guide, setGuide] = useState({ x: 0, y: 0, scale: 1.5 });
+  const guideDrag = useRef<{ pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null>(null);
   const [dimensions, setDimensions] = useState({ width: 1280, height: 720 });
   const [overlayBox, setOverlayBox] = useState({ left: 0, top: 0, width: 0, height: 0 });
   const [autoCheck, setAutoCheck] = useState(true);
@@ -45,20 +49,23 @@ export default function PracticeWorkspace({ id }: { id: string }) {
   const patches = useRef<FramePatch[]>([]);
   const cameraSettings = useRef("");
   const active = session?.status === "active";
+  const illustrated = tutorial?.scene?.mode === "illustrated";
+  const alignmentReady = illustrated ? illustratedAligned && session?.calibration?.mode === "illustrated" : !!calibration;
+  const previewGuide = illustrated && cameraOn && !alignmentReady;
   const steps = tutorial?.plan?.steps ?? [];
   const index = session?.currentStepIndex ?? 0;
   const step = steps[index];
   const landmarks = tutorial?.scene?.landmarks.slice(0, 8) ?? [];
   const movable = tutorial?.scene?.objects.filter(object => object.movable && step?.objectIds.includes(object.id)) ?? [];
   const objectAnchors = session?.calibration?.objectAnchors as Record<string, {position: [number, number, number]; stepId: string}> | undefined;
-  const anchorsConfirmed = movable.every(object => objectAnchors?.[object.id]?.stepId === step?.id);
+  const anchorsConfirmed = illustrated || movable.every(object => objectAnchors?.[object.id]?.stepId === step?.id);
   const voiceNavigation = useCallback((context: { action?: string }) => { if (context.action === "repeat_step") { setFeedback(null); setAnimationEpoch(value => value + 1); } if (context.action === "request_visual_check") void visualCheck.current?.(); }, []);
-  const voice = useVoice(id, session?.id, undefined, step ? { stepId: step.id, cameraMode: "first" } : undefined, voiceNavigation);
+  const voice = useVoice(id, session?.id, undefined, step ? { stepId: step.id, cameraMode: illustrated ? "third" : "first" } : undefined, voiceNavigation);
   const updateSession = useCallback((next: PracticeSession) => {
     const current = sessionRef.current;
     if (current?.id === next.id && current.version > next.version) return;
     sessionRef.current = next; setSession(next);
-    if (!next.calibration) setCalibration(null);
+    if (!next.calibration) { setCalibration(null); setIllustratedAligned(false); }
   }, []);
 
   useEffect(() => {
@@ -71,7 +78,7 @@ export default function PracticeWorkspace({ id }: { id: string }) {
         const result = await request(`/api/practice/${session.id}`, "GET");
         if (!cancelled) updateSession(result.session);
       } catch (cause) {
-        if (!cancelled && cause instanceof ApiError && [401, 403, 404, 409].includes(cause.status)) { setAutoCheck(false); setCalibration(null); setError(cause.message); }
+        if (!cancelled && cause instanceof ApiError && [401, 403, 404, 409].includes(cause.status)) { setAutoCheck(false); setCalibration(null); setIllustratedAligned(false); setError(cause.message); }
       } finally { inFlight = false; }
     }, 2000);
     return () => { cancelled = true; clearInterval(timer); };
@@ -84,9 +91,11 @@ export default function PracticeWorkspace({ id }: { id: string }) {
     updateSession(result.session); return result.session as PracticeSession;
   }, [updateSession]);
   const invalidate = useCallback((reason: string) => {
-    setCalibration(null); setPoints([]); patches.current = []; setError(reason);
+    setCalibration(null); setIllustratedAligned(false); setPoints([]); patches.current = []; guideDrag.current = null; setError(reason);
     if (sessionRef.current && sessionRef.current.status !== "calibrating") void action("invalidate").catch(() => {});
   }, [action]);
+  const markGuideReady = useCallback(() => setGuideReady(true), []);
+  const guideError = useCallback((message: string) => { setGuideReady(false); invalidate(message); }, [invalidate]);
 
   useEffect(() => {
     if (getExample(id)) return;
@@ -115,7 +124,7 @@ export default function PracticeWorkspace({ id }: { id: string }) {
     return () => { cancelPendingCamera(); document.removeEventListener("visibilitychange", hide); media.current?.getTracks().forEach(track => track.stop()); if (sessionRef.current?.status === "active") void fetch(`/api/practice/${sessionRef.current.id}`, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({action:"pause",version:sessionRef.current.version}), keepalive:true }).catch(() => {}); };
   }, [invalidate]);
   useEffect(() => {
-    if (!active || !calibration || !anchorsConfirmed) return;
+    if ((!active && !previewGuide) || (!alignmentReady && !previewGuide) || !anchorsConfirmed) return;
     let frame = 0, last = performance.now();
     const timing = tutorial?.scene?.steps[index];
     const start = timing?.startTime ?? 0, end = timing?.endTime ?? start + 12;
@@ -124,7 +133,7 @@ export default function PracticeWorkspace({ id }: { id: string }) {
     animationKey.current = key; animationTime.current = cursor;
     const run = (now: number) => { const delta = Math.min((now - last) / 1000, .1); last = now; cursor = cursor + delta > end ? start : cursor + delta; animationTime.current = cursor; setTime(cursor); frame = requestAnimationFrame(run); };
     frame = requestAnimationFrame(run); return () => cancelAnimationFrame(frame);
-  }, [active, calibration, anchorsConfirmed, tutorial?.scene, index, animationEpoch]);
+  }, [active, alignmentReady, previewGuide, anchorsConfirmed, tutorial?.scene, index, animationEpoch]);
   const frameImage = useCallback((maxWidth = 960) => {
     if (!video.current || video.current.readyState < 2) return null;
     const canvas = document.createElement("canvas"); canvas.width = Math.min(maxWidth, video.current.videoWidth); canvas.height = Math.round(canvas.width * video.current.videoHeight / video.current.videoWidth);
@@ -132,7 +141,7 @@ export default function PracticeWorkspace({ id }: { id: string }) {
     context.drawImage(video.current, 0, 0, canvas.width, canvas.height); return { canvas, context };
   }, []);
   useEffect(() => {
-    if (!calibration || !cameraOn) return;
+    if (!alignmentReady || !cameraOn) return;
     let lostCount = 0;
     const timer = setInterval(() => {
       const settings = media.current?.getVideoTracks()[0]?.getSettings();
@@ -143,11 +152,11 @@ export default function PracticeWorkspace({ id }: { id: string }) {
       else if (state === "lost") { if (++lostCount >= 3) invalidate("The alignment landmarks are obscured. Clear the view and realign."); } else lostCount = 0;
     }, 1200);
     return () => clearInterval(timer);
-  }, [calibration, cameraOn, frameImage, invalidate]);
+  }, [alignmentReady, cameraOn, frameImage, invalidate]);
 
   const checkStep = useCallback(async () => {
     const current = sessionRef.current;
-    if (!current || current.status !== "active" || !step || requestInFlight.current || !calibration || !anchorsConfirmed || !cameraOn) return;
+    if (!current || current.status !== "active" || !step || requestInFlight.current || !alignmentReady || !anchorsConfirmed || !cameraOn) return;
     const snapshot = frameImage(); if (!snapshot) return;
     requestInFlight.current = true; setBusy(true); setError("");
     try {
@@ -160,7 +169,7 @@ export default function PracticeWorkspace({ id }: { id: string }) {
       setError(cause instanceof Error ? cause.message : "The camera check could not complete.");
     }
     finally { requestInFlight.current = false; setBusy(false); }
-  }, [step, calibration, anchorsConfirmed, frameImage, updateSession, cameraOn]);
+  }, [step, alignmentReady, anchorsConfirmed, frameImage, updateSession, cameraOn]);
   useEffect(() => { if (!active || !autoCheck || !anchorsConfirmed) return; const timer = setInterval(() => void checkStep(), 5000); return () => clearInterval(timer); }, [active, autoCheck, anchorsConfirmed, checkStep]);
 
   useEffect(() => { visualCheck.current = checkStep; }, [checkStep]);
@@ -168,6 +177,7 @@ export default function PracticeWorkspace({ id }: { id: string }) {
   function stopCamera() { cameraGeneration.current++; media.current?.getTracks().forEach(track => track.stop()); media.current = null; setCameraOn(false); setBusy(false); invalidate("Camera is off. Reopen it and align your workspace when you’re ready."); }
   async function startCamera() {
     const cameraToken = ++cameraGeneration.current;
+    setIllustratedAligned(false); setGuideReady(false);
     setBusy(true); setError("");
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera access needs HTTPS or localhost and a supported browser.");
@@ -192,7 +202,7 @@ export default function PracticeWorkspace({ id }: { id: string }) {
   }
 
   async function matchPoint(event: React.MouseEvent<HTMLDivElement>) {
-    if (!video.current || !cameraOn || tutorial?.isExample || busy) return;
+    if (!video.current || !cameraOn || tutorial?.isExample || illustrated || busy) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const image: [number, number] = [(event.clientX - rect.left) / rect.width * dimensions.width, (event.clientY - rect.top) / rect.height * dimensions.height];
     if (anchorIndex !== null && calibration) {
@@ -232,6 +242,29 @@ export default function PracticeWorkspace({ id }: { id: string }) {
     }
   }
 
+  async function alignIllustrated() {
+    if (!cameraOn || !illustrated || !guideReady || busy) return;
+    const alignmentCamera = cameraGeneration.current;
+    setBusy(true); setError("");
+    try {
+      const snapshot = frameImage(320);
+      if (snapshot) {
+        const { width, height } = snapshot.canvas;
+        const background: [number, number][] = [.14, .32, .68, .86].flatMap(x => [.16, .5, .84].map(y => [x * width, y * height] as [number, number]));
+        patches.current = capturePatches(snapshot.context.getImageData(0, 0, width, height), background);
+      }
+      const result = await action("start_illustrated");
+      if (!result) throw new Error("Open your camera again to start a practice session.");
+      if (alignmentCamera !== cameraGeneration.current || document.hidden) { invalidate("Reopen the camera and align your guide again."); return; }
+      setIllustratedAligned(true); setAnimationEpoch(value => value + 1);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "The guide could not start. Try again."); }
+    finally { setBusy(false); }
+  }
+  function dragGuide(event: React.PointerEvent<HTMLDivElement>) {
+    const current = guideDrag.current;
+    if (!current || current.pointerId !== event.pointerId || !previewGuide || !overlayBox.width || !overlayBox.height) return;
+    setGuide(value => ({ ...value, x: Math.max(-1, Math.min(1, current.offsetX + (event.clientX - current.x) / overlayBox.width)), y: Math.max(-1, Math.min(1, current.offsetY + (event.clientY - current.y) / overlayBox.height)) }));
+  }
   async function runAction(name: string) {
     setBusy(true); setError("");
     try { const result = await action(name); if (result && name === "repeat") { setFeedback(null); setAnimationEpoch(value => value + 1); } } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update this step."); } finally { setBusy(false); }
@@ -240,9 +273,9 @@ export default function PracticeWorkspace({ id }: { id: string }) {
   return <div className="practice-page"><Link href={`/tutorial/${id}/${tutorial.slug}`} className="player-breadcrumb"><ArrowLeft size={15} />Back to the 3D tutorial</Link><header className="practice-heading"><div><div className="eyebrow"><span className="live-dot" />LET’S DO THIS TOGETHER</div><h1>Make it happen.</h1><p>{tutorial.title} · Step {index + 1} of {steps.length}</p></div><button className="button button-secondary" disabled={busy || tutorial.isExample || !session} title={!session && !tutorial.isExample ? "Open your camera to start a practice session first" : undefined} onClick={() => void (voice.status === "connected" || voice.status === "connecting" ? voice.stop() : voice.start())}><Mic size={16} />{voice.status === "connected" ? "End conversation" : voice.status === "connecting" ? "Cancel connection" : "Talk to tutor"}</button></header>
     {session?.status === "completed" ? <section className="practice-complete"><CircleCheck size={46} /><h2>You did that.</h2><p>You’ve worked through every step. Your progress is saved, and your tutor is here whenever you need a refresher.</p><Link className="button button-primary" href="/library">Back to my library<ArrowRight size={16} /></Link><Link className="button button-secondary" href={`/tutorial/${id}/${tutorial.slug}`}>Watch again</Link></section> : <div className="practice-layout"><section><div className="practice-camera" ref={cameraBox}><video ref={video} muted playsInline />
       {!cameraOn && <div className="camera-empty"><ScanLine size={40} strokeWidth={1.2} /><h2>Your space. Your pace.</h2><p>Prop your phone where it can see the work area. We’ll align the guide before you begin.</p><button className="button button-primary" disabled={busy} onClick={() => void startCamera()}><Camera size={16} />{busy ? "Opening camera…" : "Open my camera"}</button><p>Your camera is shared for visual checks only while you practice.</p></div>}
-      {cameraOn && <><button className="camera-stop" aria-label="Turn off camera" onClick={stopCamera}><CameraOff size={16} /><span>Camera off</span></button><div className="camera-status"><span />{tutorial.isExample ? "CAMERA PREVIEW" : calibration ? "WORKSPACE ALIGNED" : "ALIGN YOUR WORKSPACE"}</div>{calibration && anchorsConfirmed && <div className="ghost-layer" style={overlayBox}><SceneViewer tutorial={tutorial} time={time} mode="first" ghost calibration={calibration} opacity={opacity} objectAnchors={objectAnchors} /></div>}{(!calibration || anchorIndex !== null) && <div className="camera-click-layer" style={overlayBox} onClick={event => void matchPoint(event)}>{points.map((p, i) => <span key={p.id} className="landmark-dot" style={{ left: `${p.image[0] / dimensions.width * 100}%`, top: `${p.image[1] / dimensions.height * 100}%` }}>{i + 1}</span>)}</div>}<div className="practice-camera-caption"><strong>{tutorial.isExample ? "PREVIEW YOUR CAMERA SETUP" : anchorIndex !== null ? "LOCATE YOUR OBJECT" : calibration ? `STEP ${index + 1}` : "KEEP YOUR PHONE STILL"}</strong>{tutorial.isExample ? "Create a tutorial from your own scan to align ghost hands with your actual workspace." : anchorIndex !== null ? `Tap the base of ${movable[anchorIndex]?.id} on its support surface.` : calibration ? step?.instruction : `Tap ${landmarks[points.length]?.label || "the highlighted landmark"} in your camera view.`}</div></>}
+      {cameraOn && <><button className="camera-stop" aria-label="Turn off camera" onClick={stopCamera}><CameraOff size={16} /><span>Camera off</span></button><div className="camera-status"><span />{tutorial.isExample ? "CAMERA PREVIEW" : illustrated ? alignmentReady ? "ILLUSTRATED GUIDE" : "POSITION YOUR GUIDE" : alignmentReady ? "WORKSPACE ALIGNED" : "ALIGN YOUR WORKSPACE"}</div>{(alignmentReady || illustrated) && anchorsConfirmed && <div className="ghost-layer" style={overlayBox}><div className="ghost-transform" style={illustrated ? { transform: `translate(${guide.x * 100}%, ${guide.y * 100}%) scale(${guide.scale})` } : undefined}><SceneViewer tutorial={tutorial} time={time} mode={illustrated ? "third" : "first"} ghost calibration={illustrated ? null : calibration} opacity={opacity} objectAnchors={illustrated ? undefined : objectAnchors} onReady={markGuideReady} onError={guideError} /></div></div>}{previewGuide && <div className="guide-drag-layer" style={overlayBox} role="group" aria-label="Position illustrated guide" tabIndex={0} onPointerDown={event => { if (busy) return; event.currentTarget.setPointerCapture(event.pointerId); guideDrag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, offsetX: guide.x, offsetY: guide.y }; }} onPointerMove={dragGuide} onPointerUp={() => { guideDrag.current = null; }} onPointerCancel={() => { guideDrag.current = null; }} onKeyDown={event => { const arrows: Record<string, [number, number]> = { ArrowLeft: [-.02, 0], ArrowRight: [.02, 0], ArrowUp: [0, -.02], ArrowDown: [0, .02] }; const delta = arrows[event.key]; if (delta) { event.preventDefault(); setGuide(value => ({ ...value, x: Math.max(-1, Math.min(1, value.x + delta[0])), y: Math.max(-1, Math.min(1, value.y + delta[1])) })); } }}><span className="guide-drag-hint">Drag to position the hands</span></div>}{!illustrated && (!calibration || anchorIndex !== null) && <div className="camera-click-layer" style={overlayBox} onClick={event => void matchPoint(event)}>{points.map((p, i) => <span key={p.id} className="landmark-dot" style={{ left: `${p.image[0] / dimensions.width * 100}%`, top: `${p.image[1] / dimensions.height * 100}%` }}>{i + 1}</span>)}</div>}<div className="practice-camera-caption"><strong>{tutorial.isExample ? "PREVIEW YOUR CAMERA SETUP" : anchorIndex !== null ? "LOCATE YOUR OBJECT" : alignmentReady ? `STEP ${index + 1}` : illustrated ? "ILLUSTRATED GUIDE" : "KEEP YOUR PHONE STILL"}</strong>{tutorial.isExample ? "Create a tutorial from your own scan to align ghost hands with your actual workspace." : anchorIndex !== null ? `Tap the base of ${movable[anchorIndex]?.id} on its support surface.` : alignmentReady ? step?.instruction : illustrated ? "Line it up with your workspace. The guide’s position and scale are approximate." : `Tap ${landmarks[points.length]?.label || "the highlighted landmark"} in your camera view.`}</div></>}
     </div>{(error || voice.error) && <div className="practice-error" role="status">{error || voice.error}</div>}{voice.transcript && <div className="tutor-conversation"><div className="tutor-avatar"><Sparkles size={18} /></div><p>{voice.transcript}</p></div>}</section><aside className="practice-sidebar">
-      {tutorial.isExample ? <><div className="eyebrow">A PREVIEW OF PRACTICE MODE</div><h2>Built around your reality.</h2><p>This example shows how the player works. To guide your hands accurately, we need a scan of your own room and equipment.</p><p>Start with a short walkthrough. Your tutor will ask for close-ups and measurements where needed.</p><Link className="button button-primary" href="/create">Create my tutorial<ArrowRight size={16} /></Link></> : !calibration ? <><div className="eyebrow">ONE-TIME WORKSPACE ALIGNMENT</div><h2>Match the landmarks.</h2><p>Find the highlighted point in your 3D scene, then tap the same point in the camera view. The last two points independently check the fit.</p><div className="alignment-progress">{Array.from({length:8}, (_, i) => <span className={i < points.length ? "done" : ""} key={i} />)}</div><div className="alignment-preview"><SceneViewer tutorial={tutorial} time={0} mode="free" landmarkIndex={points.length} /></div><p><strong>{Math.min(points.length + 1, 8)} of 8:</strong> {landmarks[points.length]?.label || "Waiting for scene landmarks"}</p><button className="button button-secondary" disabled={!points.length || busy} onClick={() => setPoints([])}><RotateCcw size={15} />Start alignment again</button>{landmarks.length < 8 && <p className="player-inline-error">This scene needs eight supported landmarks before spatial guidance can begin.</p>}</> : <><div className="eyebrow">STEP {String(index + 1).padStart(2,"0")} / {String(steps.length).padStart(2,"0")}</div><h2>{step?.title}</h2><p>{step?.instruction}</p>{!anchorsConfirmed ? <><p>Confirm each object’s base before this gesture. Keep objects on the same surface and facing the same direction as in your scan.</p><button className="button button-primary" disabled={busy} onClick={() => setAnchorIndex(0)}><Crosshair size={16} />Locate {movable.length} object{movable.length === 1 ? "" : "s"}</button></> : <><button className="button button-primary" disabled={busy || !active || !cameraOn} onClick={() => void checkStep()}><Camera size={16} />{busy ? "Checking…" : "Check this step"}</button><button className="button button-secondary" disabled={busy || !active || !cameraOn} onClick={() => void runAction("confirm")}><Check size={16} />I’ve done this</button><button className="button button-secondary" disabled={busy || !cameraOn} onClick={() => void runAction("repeat")}><RotateCcw size={15} />Repeat this gesture</button><button className="button button-quiet" disabled={busy || !cameraOn} onClick={() => void runAction(active ? "pause" : "resume")}>{active ? <Pause size={15} /> : <Play size={15} />}{active ? "Pause guidance" : "Resume guidance"}</button></>}{feedback?.stepId === step?.id && <div className="practice-feedback"><strong>{feedback.status === "complete" ? "That looks right" : feedback.status === "uncertain" ? "Let’s take another look" : "A little more to do"}</strong><p>{feedback.guidance}</p></div>}<div className="practice-options"><label><input type="checkbox" checked={autoCheck} onChange={event => setAutoCheck(event.target.checked)} />Check progress automatically</label><label>Ghost visibility<input type="range" min={.2} max={.9} step={.05} value={opacity} onChange={event => setOpacity(Number(event.target.value))} /></label><button className="button button-quiet" onClick={() => invalidate("Ready to realign your workspace.")}><Crosshair size={15} />Realign workspace</button></div></>}
+      {tutorial.isExample ? <><div className="eyebrow">A PREVIEW OF PRACTICE MODE</div><h2>Built around your reality.</h2><p>This example shows how the player works. To guide your hands accurately, we need a scan of your own room and equipment.</p><p>Start with a short walkthrough. Your tutor will ask for close-ups and measurements where needed.</p><Link className="button button-primary" href="/create">Create my tutorial<ArrowRight size={16} /></Link></> : illustrated && !alignmentReady ? <><div className="eyebrow">ILLUSTRATED GUIDE</div><h2>Line it up with your workspace.</h2><p>Drag the ghost hands over your work area, then resize the guide. This is a visual aid; its positions and distances are approximate.</p><div className="guide-adjustments"><label>Guide size<input aria-label="Guide size" type="range" min={.4} max={3} step={.05} value={guide.scale} disabled={!cameraOn || busy} onChange={event => setGuide(value => ({ ...value, scale: Number(event.target.value) }))} /></label><label>Ghost visibility<input aria-label="Ghost visibility" type="range" min={.2} max={.9} step={.05} value={opacity} onChange={event => setOpacity(Number(event.target.value))} /></label><button className="button button-quiet" disabled={!cameraOn || busy} onClick={() => setGuide({ x: 0, y: 0, scale: 1.5 })}><RotateCcw size={15} />Center the guide</button></div><button className="button button-primary" disabled={!cameraOn || !session || !guideReady || busy} onClick={() => void alignIllustrated()}><Check size={16} />{busy ? "Starting guidance…" : "Guide is aligned"}</button><p>Keep the phone still. Use “Realign workspace” whenever you move it or rearrange your tools.</p></> : !alignmentReady ? <><div className="eyebrow">ONE-TIME WORKSPACE ALIGNMENT</div><h2>Match the landmarks.</h2><p>Find the highlighted point in your 3D scene, then tap the same point in the camera view. The last two points independently check the fit.</p><div className="alignment-progress">{Array.from({length:8}, (_, i) => <span className={i < points.length ? "done" : ""} key={i} />)}</div><div className="alignment-preview"><SceneViewer tutorial={tutorial} time={0} mode="free" landmarkIndex={points.length} /></div><p><strong>{Math.min(points.length + 1, 8)} of 8:</strong> {landmarks[points.length]?.label || "Waiting for scene landmarks"}</p><button className="button button-secondary" disabled={!points.length || busy} onClick={() => setPoints([])}><RotateCcw size={15} />Start alignment again</button>{landmarks.length < 8 && <p className="player-inline-error">This scene needs eight supported landmarks before spatial guidance can begin.</p>}</> : <><div className="eyebrow">STEP {String(index + 1).padStart(2,"0")} / {String(steps.length).padStart(2,"0")}</div><h2>{step?.title}</h2><p>{step?.instruction}</p>{!anchorsConfirmed ? <><p>Confirm each object’s base before this gesture. Keep objects on the same surface and facing the same direction as in your scan.</p><button className="button button-primary" disabled={busy} onClick={() => setAnchorIndex(0)}><Crosshair size={16} />Locate {movable.length} object{movable.length === 1 ? "" : "s"}</button></> : <><button className="button button-primary" disabled={busy || !active || !cameraOn} onClick={() => void checkStep()}><Camera size={16} />{busy ? "Checking…" : "Check this step"}</button><button className="button button-secondary" disabled={busy || !active || !cameraOn} onClick={() => void runAction("confirm")}><Check size={16} />I’ve done this</button><button className="button button-secondary" disabled={busy || !cameraOn} onClick={() => void runAction("repeat")}><RotateCcw size={15} />Repeat this gesture</button><button className="button button-quiet" disabled={busy || !cameraOn} onClick={() => void runAction(active ? "pause" : "resume")}>{active ? <Pause size={15} /> : <Play size={15} />}{active ? "Pause guidance" : "Resume guidance"}</button></>}{feedback?.stepId === step?.id && <div className="practice-feedback"><strong>{feedback.status === "complete" ? "That looks right" : feedback.status === "uncertain" ? "Let’s take another look" : "A little more to do"}</strong><p>{feedback.guidance}</p></div>}<div className="practice-options"><label><input type="checkbox" checked={autoCheck} onChange={event => setAutoCheck(event.target.checked)} />Check progress automatically</label><label>Ghost visibility<input type="range" min={.2} max={.9} step={.05} value={opacity} onChange={event => setOpacity(Number(event.target.value))} /></label><button className="button button-quiet" onClick={() => invalidate("Ready to realign your workspace.")}><Crosshair size={15} />Realign workspace</button></div></>}
     </aside></div>}
   </div>;
 }

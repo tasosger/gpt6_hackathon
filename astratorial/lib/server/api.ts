@@ -2,25 +2,25 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { CaptureAssetSchema, GenerationJobSchema, PracticeSessionSchema, TutorialSchema, type AppConfig, type Tutorial } from "@/lib/contracts";
 import { currentUser, requireUser, supabaseAdmin, supabaseServer } from "@/lib/supabase/server";
-import { services, requireAI, requireWorker } from "./env";
-import { api, body, dbError, fail } from "./errors";
+import { services, requireAI, requireWorker, localMode } from "./env";
+import { api, body, dbError, fail, assertRequestOrigin } from "./errors";
 import { createTutorialSchema, hydrateTutorial, newTutorial, ownedTutorial, publicSnapshot, readableTutorial, updateTutorialSchema, wakeWorker } from "./tutorials";
 import { actionSchema, applyPracticeAction, applyStepCheck, unconfirmedMovableObjects } from "./practice";
 import { checkStep, askExpert } from "./openai";
 import { endVoice, requireWorkerToken, startVoice, voiceInput } from "./voice";
 
 const uuid = z.string().uuid();
-const uploadSchema = z.object({tutorialId:uuid,name:z.string().min(1).max(200),mimeType:z.string().max(100),size:z.number().int().positive().max(600_000_000),kind:CaptureAssetSchema.shape.kind,pass:CaptureAssetSchema.shape.pass,clientFingerprint:z.string().regex(/^[a-f0-9]{64}$/).optional()});
+const uploadSchema = z.object({tutorialId:uuid,name:z.string().min(1).max(200),mimeType:z.string().max(100),size:z.number().int().positive().max(50_000_000),kind:CaptureAssetSchema.shape.kind,pass:CaptureAssetSchema.shape.pass,clientFingerprint:z.string().regex(/^[a-f0-9]{64}$/).optional()});
 const imageData = z.string().max(1_000_000).regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/);
 const json = (value:unknown,status=200) => Response.json(value,{status,headers:{"Cache-Control":"private, no-store"}});
 
 export const handleApi = api(async (request:Request) => {
   const url=new URL(request.url);
-  if (!["GET","HEAD","OPTIONS"].includes(request.method)) { const origin=request.headers.get("origin"); if(origin && origin!==url.origin)fail(403,"This request must come from Astratorial."); }
+  if (!["GET","HEAD","OPTIONS"].includes(request.method)) assertRequestOrigin(request);
   const parts=url.pathname.replace(/^\/api\//,"").split("/").filter(Boolean); const method=request.method;
   if (parts[0]==="config" && method==="GET") {
     const status=services(); const user=status.database ? await currentUser() : null;
-    const config:AppConfig={configured:status.database&&status.openai&&status.worker,services:status,user:user?{id:user.id,email:user.email||""}:null};return json(config);
+    const config:AppConfig={generationMode:localMode()?"illustrated":"measured",configured:status.database&&status.openai&&status.worker,services:status,user:user?{id:user.id,email:user.email||""}:null};return json(config);
   }
   if(parts[0]==="auth") return authRoute(request,parts[1]);
   if(parts[0]==="internal"&&parts[1]==="voice") return internalVoiceRoute(request,uuid.parse(parts[2]),parts[3]);
@@ -48,7 +48,7 @@ export const handleApi = api(async (request:Request) => {
     if(["analyze","generate","export"].includes(parts[2])&&method==="POST") {
       const user=await requireUser(); requireAI();requireWorker(); const tutorial=await ownedTutorial(id,user.id);
       if(!tutorial.assets.some(a=>a.kind==="video"||a.kind==="image"))fail(422,"Add a room video or photos before generating your tutorial.");
-      if(parts[2]==="generate") {
+      if(parts[2]==="generate"&&!localMode()) {
         if(!tutorial.plan)fail(422,"Analyze your capture and confirm the goal before generating.");
         if(tutorial.plan.questions.some(q=>q.required))fail(422,"Answer the required capture questions and analyze again first.","context_required");
         const triangulatable=(m:Tutorial["measurements"][number])=>new Set(m.observations.map(o=>`${o.assetId}:${o.timestamp}`)).size>=2;
@@ -84,7 +84,8 @@ export const handleApi = api(async (request:Request) => {
 async function authRoute(request:Request,action:string) {
   if(request.method!=="POST")fail(405,"Use POST for this action.");
   const client=await supabaseServer();
-  if(action==="logout") {const origin=request.headers.get("origin");if(origin&&origin!==new URL(request.url).origin)fail(403,"Invalid request origin.");const {error}=await client.auth.signOut();if(error)fail(503,"We could not sign out. Please try again.");return json({ok:true});}
+  if(action==="guest") { const {data:existing}=await client.auth.getUser(); if(existing.user)return json({user:{id:existing.user.id,email:existing.user.email||""}}); const {data,error}=await client.auth.signInAnonymously(); if(error||!data.user)fail(503,"We could not start your workspace. Please try again."); return json({user:{id:data.user.id,email:data.user.email||""}}); }
+  if(action==="logout") {assertRequestOrigin(request);const {error}=await client.auth.signOut();if(error)fail(503,"We could not sign out. Please try again.");return json({ok:true});}
   const input=await body(request);
   if(action==="otp") {const {email}=z.object({email:z.string().email().max(254)}).parse(input);const {error}=await client.auth.signInWithOtp({email,options:{shouldCreateUser:true}});if(error)fail(error.status===429?429:503,"We could not send your sign-in code. Wait a moment and try again.");return json({sent:true});}
   if(action==="verify") {const {email,token}=z.object({email:z.string().email(),token:z.string().regex(/^\d{6,10}$/)}).parse(input);const {data,error}=await client.auth.verifyOtp({email,token,type:"email"});if(error||!data.user)fail(400,"That code is invalid or has expired. Request a new code.");return json({user:{id:data.user.id,email:data.user.email}});}

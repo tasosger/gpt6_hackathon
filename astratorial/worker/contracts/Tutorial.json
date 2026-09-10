@@ -451,6 +451,13 @@
         {
           "type": "object",
           "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "illustrated",
+                "measured"
+              ]
+            },
             "version": {
               "type": "number",
               "const": 1

@@ -6,7 +6,7 @@ test("home filters examples and opens a real interactive player", async ({ page 
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /A little guidance/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Show your space/ })).toBeVisible();
   await page.getByRole("button", { name: "Coffee & rituals", exact: true }).click();
   await expect(page.locator(".tutorial-card")).toHaveCount(1);
   await page.goto(example);
