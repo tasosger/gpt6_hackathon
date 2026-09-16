@@ -18,7 +18,7 @@ export function installSceneLighting(renderer: THREE.WebGLRenderer, scene: THREE
   renderer.toneMapping = THREE.AgXToneMapping;
   renderer.toneMappingExposure = 1.35;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   RectAreaLightUniformsLib.init();
   const generator = new THREE.PMREMGenerator(renderer);
   const room = new RoomEnvironment();

@@ -32,6 +32,7 @@ export default function TutorialWorkspace({ id }: { id: string }) {
   const dialog = useRef<HTMLElement>(null);
   const loadedSceneUrls = useRef(new Map<string, string>());
   const hydratedRevision = useRef<number | null>(null);
+  const hydratedScenePath = useRef<string | null>(null);
   const lastHydratedAt = useRef(0);
   const markSceneReady = useCallback(() => {
     const asset = (detailed && tutorial?.scene?.assets.find(item => item.kind === "detail")) || tutorial?.scene?.assets.find(item => item.kind === "scene" || item.kind === "sanitized_scene");
@@ -55,6 +56,8 @@ export default function TutorialWorkspace({ id }: { id: string }) {
   const narrationAssets = tutorial?.scene?.assets.filter(a => a.kind === "narration" || a.kind === "sanitized_narration") ?? [];
   const narrationAsset = narrationAssets.find(a => a.stepId === step?.id) ?? narrationAssets.find(a => !a.stepId);
   const hasDetail = tutorial?.scene?.assets.some(asset => asset.kind === "detail" && asset.url);
+  const selectedSceneAsset = (detailed && tutorial?.scene?.assets.find(asset => asset.kind === "detail")) || tutorial?.scene?.assets.find(asset => asset.kind === "scene" || asset.kind === "sanitized_scene");
+  const canPlay = !!tutorial && (!!tutorial.isExample || sceneReady);
   const isOwner = tutorial?.ownerId === config?.user?.id;
   const voice = useVoice(id, undefined, useCallback(() => setPlaying(false), []), step ? { stepId: step.id, cameraMode: mode } : undefined, context => {
     const selected = timing.find(t => t.stepId === context.stepId);
@@ -68,12 +71,14 @@ export default function TutorialWorkspace({ id }: { id: string }) {
 
   const stopVoice = voice.stop;
   const acceptHydrated = useCallback((value: Tutorial) => {
-    if (hydratedRevision.current !== null && hydratedRevision.current !== value.revision) {
+    const scenePath = value.scene?.assets.find(asset => asset.kind === "scene" || asset.kind === "sanitized_scene")?.path ?? null;
+    if (hydratedRevision.current !== null && (hydratedRevision.current !== value.revision || hydratedScenePath.current !== scenePath)) {
       setPlaying(false); setTime(0); currentTime.current = 0; setPlaybackEpoch(epoch => epoch + 1);
       setDetailed(false); setSceneReady(false); setSharePreview(null); setShareJob(null); loadedSceneUrls.current.clear(); stopVoice();
       setNotice("This tutorial was updated. Start with the refreshed scene when you’re ready.");
     }
     hydratedRevision.current = value.revision; lastHydratedAt.current = Date.now();
+    hydratedScenePath.current = scenePath;
     const scene = value.scene ? { ...value.scene, assets: value.scene.assets.map(asset => loadedSceneUrls.current.has(asset.path) ? { ...asset, url: loadedSceneUrls.current.get(asset.path) } : asset) } : null;
     setTutorial({ ...value, scene });
   }, [stopVoice]);
@@ -108,27 +113,28 @@ export default function TutorialWorkspace({ id }: { id: string }) {
         finally { setBusy(false); }
       }
     }
+    setSceneReady(false);
     setDetailed(value => !value);
   }
   useEffect(() => {
-    if (!playing) return;
+    if (!playing || !canPlay) return;
     let frame = 0, last = performance.now(), cursor = currentTime.current;
     const advance = (now: number) => {
-      const delta = Math.min((now - last) / 1000, .1) * speed; last = now;
+      const delta = Math.max(0, (now - last) / 1000) * speed; last = now;
       cursor = Math.min(duration, cursor + delta); currentTime.current = cursor; setTime(cursor);
       if (cursor >= duration) { setPlaying(false); return; }
       frame = requestAnimationFrame(advance);
     };
     frame = requestAnimationFrame(advance); return () => cancelAnimationFrame(frame);
-  }, [playing, speed, duration, playbackEpoch]);
+  }, [playing, canPlay, speed, duration, playbackEpoch]);
   useEffect(() => {
     const element = audio.current;
     if (!element || !narrationAsset?.url) return;
     const target = Math.max(0, currentTime.current - (narrationAsset.stepId ? timing[stepIndex]?.startTime ?? 0 : 0));
     element.currentTime = target;
     element.playbackRate = speed;
-    if (playing && narration) void element.play().catch(() => setNotice("Tap play to allow narration audio.")); else element.pause();
-  }, [playing, narration, speed, narrationAsset?.url, narrationAsset?.stepId, stepIndex, playbackEpoch]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (playing && canPlay && narration) void element.play().catch(() => setNotice("Tap play to allow narration audio.")); else element.pause();
+  }, [playing, canPlay, narration, speed, narrationAsset?.url, narrationAsset?.stepId, stepIndex, playbackEpoch]); // eslint-disable-line react-hooks/exhaustive-deps
   const seek = (value: number) => {
     const next = Math.min(duration, Math.max(0, value)); setTime(next);
     setPlaying(false);
@@ -163,7 +169,7 @@ export default function TutorialWorkspace({ id }: { id: string }) {
     try { if (document.fullscreenElement) await document.exitFullscreen?.(); else if (viewport.current?.requestFullscreen) await viewport.current.requestFullscreen(); else setNotice("Fullscreen is not supported in this browser. You can still use the full 3D player here."); }
     catch { setNotice("Fullscreen is not supported in this browser. You can still use the full 3D player here."); }
   }
-  const onSceneError = useCallback((message: string) => { setNotice(detailed ? `${message} Switching back to the mobile scene.` : `${message} Refresh this page to renew the scene link if it expired.`); if (detailed) setDetailed(false); }, [detailed]);
+  const onSceneError = useCallback((message: string) => { setPlaying(false); setSceneReady(false); setNotice(detailed ? `${message} Switching back to the mobile scene.` : `${message} Refresh this page to renew the scene link if it expired.`); if (detailed) setDetailed(false); }, [detailed]);
   async function adapt() {
     setBusy(true); setNotice("");
     try {
@@ -218,13 +224,15 @@ export default function TutorialWorkspace({ id }: { id: string }) {
     <header className="tutorial-heading"><div><div className="eyebrow"><span className="live-dot" />{tutorial.isExample ? "INTERACTIVE EXAMPLE" : tutorial.scene?.mode === "illustrated" ? "ILLUSTRATED TUTORIAL" : "MADE FOR YOUR SPACE"}</div><h1>{tutorial.title}</h1><p>{tutorial.description}</p></div><div className="tutorial-heading-actions"><button className="button button-secondary" onClick={() => { setPlaying(false); setShareOpen(true); }}><Share2 size={16} />Share</button>{videoAsset?.url && <a className="icon-button" href={videoAsset.url} download title="Download narrated tutorial"><Download size={18} /></a>}</div></header>
     <div className="tutorial-meta"><span><Clock3 size={14} />{tutorial.plan?.estimatedMinutes ?? 5} min</span><span><ScanLine size={14} />{steps.length} steps</span><span><Sparkles size={14} />{tutorial.plan?.difficulty ?? "Beginner"} friendly</span><span>{tutorial.visibility === "public" ? <Globe2 size={14} /> : <LockKeyhole size={14} />}{tutorial.isExample ? "Example workspace" : tutorial.visibility === "public" ? "Public tutorial" : "Only you"}</span></div>
     <div className="tutorial-grid"><section className="tutorial-stage">
-      <div className="scene-viewport" ref={viewport}>
+      <div className="tutorial-player" ref={viewport}>
+      <div className="scene-viewport">
         <div className="scene-toolbar"><span className="scene-live-label"><span />{tutorial.isExample ? "EXAMPLE SCENE" : tutorial.scene?.mode === "illustrated" ? "ILLUSTRATED SCENE" : "YOUR 3D WORKSPACE"}</span><div className="camera-switch">{(["third", "first", "free"] as const).map(view => <button key={view} className={mode === view ? "active" : ""} aria-pressed={mode === view} onClick={() => setMode(view)}>{view === "third" ? "Third person" : view === "first" ? "First person" : "Free view"}</button>)}</div>{hasDetail && <button className="scene-detail-button" disabled={!sceneReady || busy} aria-pressed={detailed} aria-label={detailed ? "Use mobile detail" : "More detail"} title={detailed ? "Use mobile detail" : "Load the more detailed scene"} onClick={() => void toggleDetail()}><Eye size={15} /><span className="scene-detail-label">{detailed ? "Mobile detail" : "More detail"}</span></button>}<button className="scene-expand" aria-label="Fullscreen tutorial" onClick={() => void fullscreen()}><Expand size={17} /></button></div>
-        <SceneViewer key={`${tutorial.revision}:${detailed ? "detail" : "mobile"}`} tutorial={tutorial} time={time} mode={mode} detailed={detailed} onReady={markSceneReady} onError={onSceneError} />
-        <div className="scene-caption"><span>STEP {stepIndex + 1} OF {steps.length}</span><p>{step?.instruction || "Your scene is being prepared."}</p></div>
+        <SceneViewer key={`${tutorial.revision}:${selectedSceneAsset?.path ?? "example"}:${detailed ? "detail" : "mobile"}`} tutorial={tutorial} time={time} mode={mode} detailed={detailed} onReady={markSceneReady} onError={onSceneError} />
         {mode === "free" && <span className="orbit-hint">Drag to orbit · Pinch to zoom</span>}
       </div>
-      <div className="player-transport"><button className="transport-play" aria-label={playing ? "Pause tutorial" : "Play tutorial"} onClick={() => { if (time >= duration) seek(0); setPlaying(!playing); }}>{playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button><button aria-label="Replay current step" onClick={() => { seek(timing[stepIndex]?.startTime ?? 0); setPlaying(true); }}><RotateCcw size={17} /></button><span className="player-time">{seconds(time)}</span><input aria-label="Tutorial timeline" type="range" min={0} max={duration} step={.1} value={time} onChange={event => seek(Number(event.target.value))} /><span className="player-time">{seconds(duration)}</span><button disabled={!narrationAsset?.url} title={narrationAsset?.url ? undefined : "Narration is included in generated tutorials"} aria-label={narration ? "Mute narration" : "Enable narration"} onClick={() => setNarration(!narration)}>{narration ? <Volume2 size={18} /> : <VolumeX size={18} />}</button><select aria-label="Playback speed" value={speed} onChange={event => setSpeed(Number(event.target.value))}><option value={.5}>0.5×</option><option value={.75}>0.75×</option><option value={1}>1×</option><option value={1.5}>1.5×</option></select></div>
+        <div className="scene-caption"><span>STEP {stepIndex + 1} OF {steps.length}</span><p>{step?.instruction || "Your scene is being prepared."}</p></div>
+      <div className="player-transport"><button className="transport-play" disabled={!canPlay} title={canPlay ? undefined : "Waiting for your scene to load"} aria-label={playing ? "Pause tutorial" : "Play tutorial"} onClick={() => { if (time >= duration) seek(0); setPlaying(!playing); }}>{playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button><button aria-label="Replay current step" onClick={() => { seek(timing[stepIndex]?.startTime ?? 0); setPlaying(true); }}><RotateCcw size={17} /></button><span className="player-time">{seconds(time)}</span><input aria-label="Tutorial timeline" type="range" min={0} max={duration} step={.1} value={time} onChange={event => seek(Number(event.target.value))} /><span className="player-time">{seconds(duration)}</span><button disabled={!narrationAsset?.url} title={narrationAsset?.url ? undefined : "Narration is included in generated tutorials"} aria-label={narration ? "Mute narration" : "Enable narration"} onClick={() => setNarration(!narration)}>{narration ? <Volume2 size={18} /> : <VolumeX size={18} />}</button><select aria-label="Playback speed" value={speed} onChange={event => setSpeed(Number(event.target.value))}><option value={.5}>0.5×</option><option value={.75}>0.75×</option><option value={1}>1×</option><option value={1.5}>1.5×</option></select></div>
+      </div>
       {narrationAsset?.url && <audio ref={audio} src={narrationAsset.url} preload="auto" onLoadedMetadata={() => { if (audio.current) audio.current.currentTime = Math.max(0, currentTime.current - (narrationAsset.stepId ? timing[stepIndex]?.startTime ?? 0 : 0)); }} />}
       <div className="tutor-conversation"><div className="tutor-avatar"><Sparkles size={19} /></div><div><strong>Your tutor is here</strong><p>{voice.transcript || "Ask a question, take it slower, or see that step again."}</p>{(voice.error || notice) && <p className="player-inline-error" role="status">{voice.error || notice}</p>}</div><button className={`button ${voice.status === "connected" ? "voice-active" : "button-secondary"}`} onClick={() => { setPlaying(false); if (tutorial.isExample) { setNotice("Live voice connects to your own saved tutorial. Create one to talk through your workspace with Astra."); return; } if (voice.status === "connected" || voice.status === "connecting") voice.stop(); else void voice.start(); }}><Mic size={16} />{voice.status === "connecting" ? "Cancel connection" : voice.status === "connected" ? "End conversation" : "Talk to tutor"}</button></div>
       {!tutorial.isExample && tutorial.scene?.mode === "illustrated" && <p className="example-disclosure"><Eye size={14} />Illustrated tutorial based on your video. Shapes, gestures, and distances are approximate.</p>}

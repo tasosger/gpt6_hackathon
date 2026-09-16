@@ -29,3 +29,10 @@
   .player-transport button { min-width:36px; min-height:44px; }
   .tutorial-heading-actions .button { min-width:44px; }
 }
+
+.player-transport .transport-play:disabled{opacity:.45;cursor:wait}
+
+.tutorial-player>.scene-caption{position:static;transform:none;width:auto;max-width:none;border-radius:0;background:#262e32;padding:12px 20px;text-align:left;pointer-events:auto;backdrop-filter:none;display:flex;align-items:center;gap:14px}.tutorial-player>.scene-caption>span{white-space:nowrap}.tutorial-player>.scene-caption p{max-width:none;margin:0;font-size:12px}.tutorial-player>.scene-caption+.player-transport{border-top:1px solid #ffffff12}
+@media(max-width:600px){.tutorial-player>.scene-caption{display:block;padding:12px 15px}.tutorial-player>.scene-caption p{margin-top:4px}}
+
+.tutorial-player:fullscreen{display:flex;flex-direction:column;width:100vw;height:100vh;background:#252c30}.tutorial-player:fullscreen .scene-viewport{flex:1;min-height:0;aspect-ratio:auto;border-radius:0}.tutorial-player:fullscreen .scene-caption,.tutorial-player:fullscreen .player-transport{flex-shrink:0;border-radius:0}

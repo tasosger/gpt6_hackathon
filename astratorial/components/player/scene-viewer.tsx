@@ -3,12 +3,13 @@
 import { Component, Suspense, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { ContactShadows, Html, OrbitControls, RoundedBox } from "@react-three/drei";
-import { AnimationMixer, DoubleSide, Group, Mesh, MeshStandardMaterial, Vector3, Quaternion, Color, type Object3D } from "three";
+import { DoubleSide, PCFShadowMap, Group, Mesh, MeshStandardMaterial, Vector3, Quaternion, Color, type Object3D } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { clone } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { createScenePipeline, installSceneLighting } from "@/lib/scene-lighting";
+import { createTimelineAnimation } from "@/lib/timeline-animation";
 import type { SceneManifest, Tutorial, Vec3 } from "@/lib/contracts";
 import type { Calibration } from "@/lib/calibration";
 
@@ -69,17 +70,18 @@ function RecordedScene({ manifest, time, ghost, opacity, objectAnchors, detailed
     });
     return object;
   }, [gltf.scene, manifest.rig.handNodes, ghost, opacity]);
-  const mixer = useMemo(() => new AnimationMixer(scene), [scene]);
+  const animation = useRef<ReturnType<typeof createTimelineAnimation> | null>(null);
   useEffect(() => { onReady?.(); }, [gltf, onReady]);
   // Three.js cameras are imperative objects owned by the renderer, not React state.
   /* eslint-disable react-hooks/immutability */
   useEffect(() => {
-    for (const clip of gltf.animations) mixer.clipAction(clip).play();
-    return () => { mixer.stopAllAction(); mixer.uncacheRoot(scene); };
-  }, [gltf.animations, mixer, scene]);
+    const controller = createTimelineAnimation(scene, gltf.animations);
+    animation.current = controller;
+    return () => { animation.current = null; controller.dispose(); };
+  }, [gltf.animations, scene]);
   useEffect(() => () => { scene.traverse(node => { if (node instanceof Mesh) (Array.isArray(node.material) ? node.material : [node.material]).forEach(m => m.dispose()); }); }, [scene]);
   useFrame(() => {
-    mixer.setTime(time);
+    animation.current?.seek(time);
     if (!ghost) return;
     const step = manifest.steps.find(s => time >= s.startTime && time < s.endTime);
     scene.traverse(node => {
@@ -190,11 +192,11 @@ export default function SceneViewer({ tutorial, time, mode, ghost = false, calib
   const currentStep = scene?.steps.findIndex(s => time >= s.startTime && time < s.endTime) ?? (sampleStep < 0 ? (tutorial.plan?.steps.length ?? 1) - 1 : sampleStep);
   const hasAsset = scene?.assets.some(a => (a.kind === "scene" || a.kind === "sanitized_scene") && a.url);
   if (!hasAsset && !tutorial.isExample) return <div className="scene-unavailable"><span>Your scene is being prepared</span><p>The player will become available when your reconstruction passes its quality checks.</p></div>;
-  return <SceneBoundary onError={onError}><Canvas shadows dpr={[1, 2]} camera={{ position: [2.4, 2.15, 2.8], fov: 42, near: .01, far: 100 }} gl={{ antialias: true, alpha: ghost }} style={{ background: ghost ? "transparent" : "#dfd8c9" }}>
+  return <SceneBoundary onError={onError}><Canvas shadows={{ type: PCFShadowMap }} dpr={[1, 2]} camera={{ position: [2.4, 2.15, 2.8], fov: 42, near: .01, far: 100 }} gl={{ antialias: true, alpha: ghost }} style={{ background: ghost ? "transparent" : "#dfd8c9" }}>
     {!ghost && <color attach="background" args={["#dfd8c9"]} />}
     {!ghost && <StudioLight />}
     {ghost && <ambientLight intensity={1.2} />}
-    <Suspense fallback={<Html center><span className="scene-loading">Preparing your scene…</span></Html>}>
+    <Suspense fallback={<Html center calculatePosition={(_object, _camera, size) => [size.width / 2, size.height / 2]}><span className="scene-loading" role="status">Preparing your scene…</span></Html>}>
       {hasAsset && scene ? <RecordedScene manifest={scene} time={time} ghost={ghost} opacity={opacity} objectAnchors={objectAnchors} detailed={detailed} onReady={onReady} /> : <DemoScene category={tutorial.category} time={time} step={Math.max(0, currentStep)} ghost={ghost} mode={mode} />}
       {!ghost && landmarkIndex !== undefined && scene?.landmarks[landmarkIndex] && <mesh position={scene.landmarks[landmarkIndex].position}><sphereGeometry args={[.022, 20, 16]} /><meshBasicMaterial color="#14b8a6" depthTest={false} /></mesh>}
     </Suspense>
